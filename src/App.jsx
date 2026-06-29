@@ -13,6 +13,12 @@ const ANIMALS = [
   'Cobra', 'Tiger', 'Shark', 'Falcon', 'Viper', 'Badger'
 ];
 
+function randomName() {
+  const a = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+  const b = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
+  return `${a} ${b}`;
+}
+
 function getOrCreateName() {
   try {
     const saved = localStorage.getItem('anonchat_name');
@@ -170,6 +176,10 @@ export default function App() {
     try { localStorage.removeItem('anonchat_name'); } catch (_) {}
     window.location.reload();
   }, []);
+
+  const handleNewRoomKey = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); createRoom(); }
+  };
 
   if (!ready) {
     return (
