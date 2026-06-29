@@ -91,7 +91,9 @@ export default function App() {
   }, [messages]);
 
   useEffect(() => {
-    const socket = io({
+    const isCapacitor = typeof window !== 'undefined' && (window.Capacitor || window.Capacitor?.isNative);
+    const serverUrl = isCapacitor ? 'https://chat-app.onrender.com' : undefined;
+    const socket = io(serverUrl, {
       transports: ['websocket', 'polling'],
       reconnection: true
     });

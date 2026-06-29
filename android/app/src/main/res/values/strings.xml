@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">AnonChat</string>
+    <string name="title_activity_main">AnonChat</string>
+    <string name="package_name">com.anonchat.app</string>
+    <string name="custom_url_scheme">com.anonchat.app</string>
+</resources>
