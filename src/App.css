@@ -400,6 +400,15 @@ body {
   animation: fadeUp 0.2s ease;
 }
 
+.my-tag {
+  font-size: 12px;
+  color: #52525b;
+  background: rgba(255,255,255,0.03);
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.05);
+}
+
 /* ---- Main chat ---- */
 .main {
   flex: 1;

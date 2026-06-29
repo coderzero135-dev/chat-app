@@ -3,6 +3,22 @@ import { io } from 'socket.io-client';
 
 const REACT_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
 
+const ADJECTIVES = [
+  'Secret', 'Hidden', 'Mystery', 'Shadow', 'Ghost', 'Silent', 'Phantom',
+  'Stealth', 'Covert', 'Invisible', 'Unknown', 'Masked', 'Veiled', 'Cipher'
+];
+
+const ANIMALS = [
+  'Fox', 'Wolf', 'Cat', 'Owl', 'Bear', 'Hawk', 'Lynx', 'Raven',
+  'Cobra', 'Tiger', 'Shark', 'Falcon', 'Viper', 'Badger'
+];
+
+function randomName() {
+  const a = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+  const b = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
+  return `${a} ${b}`;
+}
+
 function getInitials(name) {
   return name.slice(0, 2).toUpperCase();
 }
@@ -13,17 +29,15 @@ function formatTime(ts) {
 }
 
 export default function App() {
-  const [username, setUsername] = useState('');
-  const [joined, setJoined] = useState(false);
   const [messages, setMessages] = useState([]);
   const [roomUsers, setRoomUsers] = useState([]);
   const [typingUsers, setTypingUsers] = useState([]);
   const [roomList, setRoomList] = useState(['general']);
   const [currentRoom, setCurrentRoom] = useState('general');
   const [input, setInput] = useState('');
-  const [error, setError] = useState('');
   const [ready, setReady] = useState(false);
   const [myId, setMyId] = useState(null);
+  const [myName, setMyName] = useState('');
   const [myColor, setMyColor] = useState('#6366f1');
   const [reactionPicker, setReactionPicker] = useState(null);
   const [newRoomName, setNewRoomName] = useState('');
@@ -46,16 +60,20 @@ export default function App() {
       reconnection: true
     });
     socketRef.current = socket;
-    setReady(true);
+
+    socket.on('connect', () => {
+      setReady(true);
+    });
 
     socket.on('welcome', ({ yourId, color }) => {
       setMyId(yourId);
       setMyColor(color);
+      const name = randomName();
+      setMyName(name);
+      socket.emit('join', name);
     });
 
-    socket.on('room-list', (list) => {
-      setRoomList(list);
-    });
+    socket.on('room-list', (list) => setRoomList(list));
 
     socket.on('load-messages', (msgs) => {
       setMessages(msgs);
@@ -75,7 +93,7 @@ export default function App() {
     });
 
     socket.on('typing-update', ({ room, users: list }) => {
-      if (room === currentRoom) setTypingUsers(list.filter((u) => u !== username));
+      if (room === currentRoom) setTypingUsers(list.filter((u) => u !== myName));
     });
 
     socket.on('reaction-update', ({ messageId, reactions }) => {
@@ -85,16 +103,7 @@ export default function App() {
     });
 
     return () => socket.close();
-  }, [currentRoom, username]);
-
-  const doJoin = useCallback(() => {
-    const name = username.trim();
-    if (!name) return setError('Enter a username');
-    if (!socketRef.current?.connected) return setError('Server not reachable');
-    setError('');
-    socketRef.current.emit('join', name);
-    setJoined(true);
-  }, [username]);
+  }, [currentRoom, myName]);
 
   const switchRoom = useCallback((room) => {
     if (room === currentRoom) return;
@@ -137,7 +146,7 @@ export default function App() {
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      joined ? send() : doJoin();
+      send();
     }
   };
 
@@ -150,28 +159,7 @@ export default function App() {
       <div className="join-screen">
         <div className="join-card center">
           <div className="loader" />
-          <p className="dim">Establishing connection...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!joined) {
-    return (
-      <div className="join-screen">
-        <div className="join-card">
-          <div className="join-icon">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-            </svg>
-          </div>
-          <h1 className="join-title">Welcome</h1>
-          <p className="join-sub">Enter a username to start chatting</p>
-          <input className="input" placeholder="Your username" value={username}
-            onChange={(e) => setUsername(e.target.value)} onKeyDown={handleKeyDown}
-            autoFocus maxLength={20} />
-          {error && <div className="err">{error}</div>}
-          <button className="btn-primary" onClick={doJoin}>Join Chat</button>
+          <p className="dim">Joining anonymously...</p>
         </div>
       </div>
     );
@@ -193,7 +181,7 @@ export default function App() {
             </svg>
           </div>
           <div>
-            <div className="sidebar-title">Chatroom</div>
+            <div className="sidebar-title">AnonChat</div>
             <div className="sidebar-count">
               <span className="pulse-dot" /> {roomUsers.length} online
             </div>
@@ -234,7 +222,7 @@ export default function App() {
                   {getInitials(u)}
                 </div>
                 <span className="user-name">{u}</span>
-                {u === username && <span className="you-tag">you</span>}
+                {u === myName && <span className="you-tag">you</span>}
               </li>
             ))}
           </ul>
@@ -244,6 +232,7 @@ export default function App() {
       <main className="main">
         <div className="main-header">
           <span className="room-label"># {currentRoom}</span>
+          {myName && <span className="my-tag">You are {myName}</span>}
           {typingText && <span className="typing-indicator">{typingText}</span>}
         </div>
 
@@ -288,7 +277,7 @@ export default function App() {
                   <span className="msg-time">{formatTime(m.time)}</span>
                 </div>
                 {isMine && showAvatar && (
-                  <div className="avatar" style={{ background: myColor }}>{getInitials(username)}</div>
+                  <div className="avatar" style={{ background: myColor }}>{getInitials(myName)}</div>
                 )}
                 {isMine && !showAvatar && <div className="avatar-spacer" />}
               </div>
