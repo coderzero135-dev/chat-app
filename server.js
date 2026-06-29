@@ -3,7 +3,12 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const fs = require('fs');
+const fsp = require('fs').promises;
 const os = require('os');
+
+const MAX_MESSAGE_LENGTH = 2000;
+const MAX_MSG_PER_ROOM = 500;
+const RATE_LIMIT_MS = 300;
 
 const DATA_DIR = path.join(__dirname, 'data');
 const MESSAGES_DIR = path.join(DATA_DIR, 'rooms');
@@ -37,19 +42,24 @@ function sanitize(name) {
   return name.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50) || 'general';
 }
 
-function loadMessages(room) {
+async function loadMessages(room) {
+  const rp = roomPath(room);
   try {
-    if (fs.existsSync(roomPath(room))) {
-      return JSON.parse(fs.readFileSync(roomPath(room), 'utf-8'));
+    if (fs.existsSync(rp)) {
+      return JSON.parse(await fsp.readFile(rp, 'utf-8'));
     }
-  } catch (_) {}
+  } catch (e) {
+    console.error(`[chat] failed to load messages for room ${room}:`, e.message);
+  }
   return [];
 }
 
-function saveMessages(room, msgs) {
+async function saveMessages(room, msgs) {
   try {
-    fs.writeFileSync(roomPath(room), JSON.stringify(msgs.slice(-500)));
-  } catch (_) {}
+    await fsp.writeFile(roomPath(room), JSON.stringify(msgs.slice(-MAX_MSG_PER_ROOM)));
+  } catch (e) {
+    console.error(`[chat] failed to save messages for room ${room}:`, e.message);
+  }
 }
 
 function loadRoomList() {
@@ -71,7 +81,8 @@ try { discovery = require('./discovery'); } catch (_) {}
 
 const users = new Map();        // socket.id -> { username, color, room }
 const rooms = new Map();        // roomName -> Set of socket IDs
-const typingTimers = new Map(); // roomName -> Set of { username } currently typing
+const typingTimers = new Map(); // roomName -> Map<socketId, username>
+const lastMessageTime = new Map(); // socket.id -> timestamp for rate limiting
 
 // Ensure "general" room exists
 rooms.set('general', new Set());
@@ -82,7 +93,7 @@ io.on('connection', (socket) => {
   socket.join('general');
   rooms.get('general').add(socket.id);
 
-  socket.on('join', (username) => {
+  socket.on('join', async (username) => {
     const name = String(username || 'Anon').trim().slice(0, 20);
     const color = randomColor();
     users.set(socket.id, { username: name, color, room: currentRoom });
@@ -90,7 +101,7 @@ io.on('connection', (socket) => {
     socket.emit('welcome', { yourId: socket.id, color });
 
     socket.emit('room-list', loadRoomList());
-    socket.emit('load-messages', loadMessages(currentRoom));
+    socket.emit('load-messages', await loadMessages(currentRoom));
     broadcastRoomUsers(currentRoom);
 
     io.to(currentRoom).emit('message', {
@@ -100,14 +111,17 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('create-room', (roomName) => {
+  socket.on('create-room', async (roomName) => {
     const name = sanitize(String(roomName || '').trim());
     if (!name) return;
     if (!rooms.has(name)) rooms.set(name, new Set());
+    if (!fs.existsSync(roomPath(name))) {
+      await saveMessages(name, []);
+    }
     socket.emit('room-list', loadRoomList());
   });
 
-  socket.on('join-room', (roomName) => {
+  socket.on('join-room', async (roomName) => {
     const name = sanitize(String(roomName || '').trim());
     if (!name || name === currentRoom) return;
     if (!rooms.has(name)) rooms.set(name, new Set());
@@ -132,7 +146,7 @@ io.on('connection', (socket) => {
     rooms.get(name).add(socket.id);
     if (user) {
       user.room = name;
-      socket.emit('load-messages', loadMessages(name));
+      socket.emit('load-messages', await loadMessages(name));
       io.to(name).emit('message', {
         type: 'system',
         text: `${user.username} joined`,
@@ -143,26 +157,31 @@ io.on('connection', (socket) => {
     socket.emit('room-list', loadRoomList());
   });
 
-  socket.on('chat-message', (text) => {
+  socket.on('chat-message', async (text) => {
     const user = users.get(socket.id);
     if (!user) return;
     const msg = String(text || '').trim();
-    if (!msg) return;
+    if (!msg || msg.length > MAX_MESSAGE_LENGTH) return;
+
+    const now = Date.now();
+    const last = lastMessageTime.get(socket.id) || 0;
+    if (now - last < RATE_LIMIT_MS) return;
+    lastMessageTime.set(socket.id, now);
 
     const message = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+      id: now.toString(36) + Math.random().toString(36).slice(2, 7),
       type: 'user',
       senderId: socket.id,
       username: user.username,
       color: user.color,
       text: msg,
-      time: Date.now(),
+      time: now,
       reactions: {}
     };
 
-    const messages = loadMessages(currentRoom);
+    const messages = await loadMessages(currentRoom);
     messages.push(message);
-    saveMessages(currentRoom, messages);
+    await saveMessages(currentRoom, messages);
 
     io.to(currentRoom).emit('message', message);
     clearTyping(socket.id, currentRoom);
@@ -182,11 +201,11 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('react', ({ messageId, emoji }) => {
+  socket.on('react', async ({ messageId, emoji }) => {
     const user = users.get(socket.id);
     if (!user || !messageId || !emoji) return;
 
-    const messages = loadMessages(currentRoom);
+    const messages = await loadMessages(currentRoom);
     const msg = messages.find(m => m.id === messageId);
     if (!msg) return;
     if (!msg.reactions) msg.reactions = {};
@@ -200,7 +219,7 @@ io.on('connection', (socket) => {
       msg.reactions[emoji].push(socket.id);
     }
 
-    saveMessages(currentRoom, messages);
+    await saveMessages(currentRoom, messages);
     io.to(currentRoom).emit('reaction-update', { messageId, reactions: msg.reactions });
   });
 
@@ -217,6 +236,7 @@ io.on('connection', (socket) => {
       broadcastRoomUsers(user.room);
     }
     users.delete(socket.id);
+    lastMessageTime.delete(socket.id);
   });
 });
 
@@ -237,7 +257,9 @@ function broadcastTyping(room) {
 
 function clearTyping(socketId, room) {
   if (typingTimers.has(room)) {
-    typingTimers.get(room).delete(socketId);
+    const roomTimers = typingTimers.get(room);
+    roomTimers.delete(socketId);
+    if (roomTimers.size === 0) typingTimers.delete(room);
     broadcastTyping(room);
   }
 }

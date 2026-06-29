@@ -348,9 +348,51 @@ input, button { font-family: inherit; }
   flex: 1;
 }
 
-.typing-indicator {
-  font-size: 12px; color: #818cf8;
-  animation: fadeUp 0.2s ease;
+.typing-bubble-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding-left: 4px;
+  animation: fadeUp 0.25s ease;
+}
+
+.typing-avatar {
+  background: #27272a !important;
+  flex-shrink: 0;
+}
+
+.typing-bubble {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 14px;
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 16px 16px 16px 4px;
+}
+
+.typing-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #71717a;
+  animation: typingBounce 1.4s infinite ease-in-out;
+}
+
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-6px); }
+}
+
+.typing-label {
+  font-size: 11px;
+  color: #52525b;
+  white-space: nowrap;
+  padding-bottom: 4px;
 }
 
 .my-tag {
@@ -497,6 +539,11 @@ input, button { font-family: inherit; }
 }
 
 /* ---- Input bar ---- */
+.input-area {
+  position: relative;
+  flex-shrink: 0;
+}
+
 .input-bar {
   display: flex;
   gap: 8px;
@@ -542,6 +589,68 @@ input, button { font-family: inherit; }
 .send-btn:hover { opacity: 0.85; }
 .send-btn:active { transform: scale(0.94); }
 .send-btn:disabled { opacity: 0.3; cursor: default; }
+
+.send-btn.cooling {
+  background: #27272a;
+  opacity: 0.5;
+  cursor: default;
+}
+
+.emoji-toggle {
+  width: 44px; height: 44px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  color: #a1a1aa;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: color 0.2s, border-color 0.2s;
+  flex-shrink: 0;
+  -webkit-appearance: none;
+}
+
+.emoji-toggle:hover { color: #f1f1f3; border-color: rgba(255,255,255,0.15); }
+
+.emoji-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+}
+
+.emoji-panel {
+  position: absolute;
+  bottom: calc(100%);
+  left: 0;
+  right: 0;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  padding: 8px;
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 16px;
+  z-index: 10;
+  max-height: 220px;
+  overflow-y: auto;
+  animation: fadeUp 0.2s ease;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+
+.emoji-item {
+  width: 100%;
+  aspect-ratio: 1;
+  background: transparent;
+  border: none;
+  border-radius: 10px;
+  font-size: 22px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s;
+  -webkit-appearance: none;
+  padding: 0;
+}
+
+.emoji-item:hover { background: rgba(255,255,255,0.08); }
 
 /* ---- Scrollbar ---- */
 ::-webkit-scrollbar { width: 3px; }

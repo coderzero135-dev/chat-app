@@ -2,6 +2,7 @@ const { spawn } = require('child_process');
 const os = require('os');
 
 const ROOT = __dirname;
+const isWin = process.platform === 'win32';
 
 function getIP() {
   const nets = os.networkInterfaces();
@@ -16,12 +17,12 @@ function getIP() {
 function run(cmd, args, label) {
   const child = spawn(cmd, args, {
     cwd: ROOT,
-    shell: true,
+    shell: isWin,
     stdio: 'pipe'
   });
   child.stdout.on('data', (d) => process.stdout.write(`[${label}] ${d}`));
   child.stderr.on('data', (d) => process.stderr.write(`[${label}] ${d}`));
-  child.on('close', () => process.exit());
+  child.on('close', (code) => process.exit(code || 0));
   return child;
 }
 

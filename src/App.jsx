@@ -3,6 +3,18 @@ import { io } from 'socket.io-client';
 
 const REACT_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
 
+const EMOJI_LIST = [
+  '😀','😃','😄','😁','😅','😂','🤣','😊',
+  '😇','🙂','😉','😌','😍','🥰','😘','😗',
+  '😋','😛','😜','🤪','😝','🤑','🤗','🤭',
+  '🤔','🤐','😐','😑','😶','😏','😒','🙄',
+  '😬','😮','🤐','😯','😲','😳','🥺','😢',
+  '😭','😤','😡','🤬','💀','☠️','🤖','👻',
+  '👍','👎','👏','🙌','🤝','💪','✌️','🤞',
+  '❤️','🧡','💛','💚','💙','💜','🖤','🤍',
+  '🔥','⭐','✨','💯','✅','❌','💩','🎉'
+];
+
 const ADJECTIVES = [
   'Secret', 'Hidden', 'Mystery', 'Shadow', 'Ghost', 'Silent', 'Phantom',
   'Stealth', 'Covert', 'Invisible', 'Unknown', 'Masked', 'Veiled', 'Cipher'
@@ -53,10 +65,13 @@ export default function App() {
   const [newRoomName, setNewRoomName] = useState('');
   const [showNewRoom, setShowNewRoom] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [sendCooldown, setSendCooldown] = useState(false);
 
   const socketRef = useRef(null);
   const messagesEnd = useRef(null);
   const typingTimer = useRef(null);
+  const inputRef = useRef(null);
   const msgCache = useRef({});
   const currentRoomRef = useRef('general');
   const myNameRef = useRef('');
@@ -125,7 +140,10 @@ export default function App() {
       );
     });
 
-    return () => socket.close();
+    return () => {
+      if (typingTimer.current) clearTimeout(typingTimer.current);
+      socket.close();
+    };
   }, []);
 
   const switchRoom = useCallback((room) => {
@@ -146,12 +164,15 @@ export default function App() {
 
   const send = useCallback(() => {
     const text = input.trim();
-    if (!text || !socketRef.current) return;
+    if (!text || !socketRef.current || sendCooldown) return;
     socketRef.current.emit('chat-message', text);
     setInput('');
+    setShowEmojiPicker(false);
+    setSendCooldown(true);
+    setTimeout(() => setSendCooldown(false), 350);
     if (typingTimer.current) clearTimeout(typingTimer.current);
     socketRef.current.emit('typing', false);
-  }, [input]);
+  }, [input, sendCooldown]);
 
   const handleTyping = useCallback((val) => {
     setInput(val);
@@ -179,6 +200,22 @@ export default function App() {
     window.location.reload();
   }, []);
 
+  const insertEmoji = useCallback((emoji) => {
+    const el = inputRef.current;
+    if (!el) { setInput((prev) => prev + emoji); return; }
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const before = input.slice(0, start);
+    const after = input.slice(end);
+    const next = before + emoji + after;
+    setInput(next);
+    setTimeout(() => {
+      el.selectionStart = el.selectionEnd = start + emoji.length;
+      el.focus();
+    }, 0);
+    handleTyping(next);
+  }, [input, handleTyping]);
+
   const handleNewRoomKey = (e) => {
     if (e.key === 'Enter') { e.preventDefault(); createRoom(); }
   };
@@ -199,6 +236,9 @@ export default function App() {
     : typingUsers.length > 1
     ? `${typingUsers.length} people typing...`
     : null;
+
+  const firstTypingUser = typingUsers[0];
+  const typingInitials = firstTypingUser ? getInitials(firstTypingUser) : '';
 
   return (
     <div className={`chat-layout ${sidebarOpen ? 'sidebar-open' : ''}`}>
@@ -278,7 +318,6 @@ export default function App() {
               <button className="new-name-btn" onClick={changeIdentity} title="New identity">&#x21bb;</button>
             </span>
           )}
-          {typingText && <span className="typing-indicator">{typingText}</span>}
         </div>
 
         <div className="msg-area">
@@ -328,21 +367,52 @@ export default function App() {
               </div>
             );
           })}
+          {typingUsers.length > 0 && (
+            <div className="typing-bubble-row">
+              <div className="avatar-sm typing-avatar">{typingInitials}</div>
+              <div className="typing-bubble">
+                <span className="typing-dot" />
+                <span className="typing-dot" />
+                <span className="typing-dot" />
+              </div>
+              <span className="typing-label">{typingText}</span>
+            </div>
+          )}
           <div ref={messagesEnd} />
         </div>
 
-        <div className="input-bar">
-          <input className="chat-input" placeholder={`Message #${currentRoom}`}
-            value={input}
-            onChange={(e) => handleTyping(e.target.value)}
-            onKeyDown={handleKeyDown}
-            autoFocus />
-          <button className="send-btn" onClick={send} disabled={!input.trim()}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="22" y1="2" x2="11" y2="13" />
-              <polygon points="22 2 15 22 11 13 2 9 22 2" />
-            </svg>
-          </button>
+        <div className="input-area">
+          <div className="input-bar">
+            <button className="emoji-toggle" onClick={() => setShowEmojiPicker((v) => !v)} title="Emoji">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                <line x1="9" y1="9" x2="9.01" y2="9" />
+                <line x1="15" y1="9" x2="15.01" y2="9" />
+              </svg>
+            </button>
+            <input ref={inputRef} className="chat-input" placeholder={`Message #${currentRoom}`}
+              value={input}
+              onChange={(e) => handleTyping(e.target.value)}
+              onKeyDown={handleKeyDown}
+              autoFocus />
+            <button className={`send-btn ${sendCooldown ? 'cooling' : ''}`} onClick={send} disabled={!input.trim() || sendCooldown}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13" />
+                <polygon points="22 2 15 22 11 13 2 9 22 2" />
+              </svg>
+            </button>
+          </div>
+          {showEmojiPicker && (
+            <>
+              <div className="emoji-backdrop" onClick={() => setShowEmojiPicker(false)} />
+              <div className="emoji-panel">
+                {EMOJI_LIST.map((e) => (
+                  <button key={e} className="emoji-item" onClick={() => insertEmoji(e)}>{e}</button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </main>
     </div>
