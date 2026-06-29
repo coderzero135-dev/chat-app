@@ -257,6 +257,115 @@ body {
   letter-spacing: 0.3px;
 }
 
+/* ---- Rooms ---- */
+.room-section {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.section-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #52525b;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 8px 8px 4px;
+}
+
+.room-list {
+  list-style: none;
+}
+
+.room-item {
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #a1a1aa;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s;
+}
+
+.room-item:hover {
+  background: rgba(255,255,255,0.03);
+  color: #e4e4e7;
+}
+
+.room-item.active {
+  background: rgba(99,102,241,0.1);
+  color: #818cf8;
+}
+
+.room-hash {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.new-room-btn {
+  width: 100%;
+  padding: 7px 12px;
+  background: none;
+  border: 1px dashed rgba(255,255,255,0.08);
+  border-radius: 8px;
+  color: #52525b;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  margin-top: 4px;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.new-room-btn:hover {
+  border-color: rgba(99,102,241,0.3);
+  color: #818cf8;
+}
+
+.new-room-form {
+  display: flex;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.input-sm {
+  flex: 1;
+  padding: 6px 10px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 6px;
+  color: #f1f1f3;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+}
+
+.input-sm:focus {
+  border-color: rgba(99,102,241,0.4);
+}
+
+.btn-xs {
+  padding: 4px 8px;
+  background: rgba(99,102,241,0.2);
+  color: #818cf8;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.btn-xs.cancel {
+  background: none;
+  color: #52525b;
+}
+
+/* ---- User section ---- */
+.user-section {
+  flex: 1;
+  overflow-y: auto;
+}
+
 .sidebar-foot {
   padding: 14px 18px;
   border-top: 1px solid rgba(255,255,255,0.05);
@@ -268,6 +377,27 @@ body {
 .my-name {
   font-size: 13px;
   color: #a1a1aa;
+}
+
+/* ---- Main header ---- */
+.main-header {
+  padding: 14px 24px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.room-label {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+}
+
+.typing-indicator {
+  font-size: 12px;
+  color: #818cf8;
+  animation: fadeUp 0.2s ease;
 }
 
 /* ---- Main chat ---- */
@@ -471,6 +601,66 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255,255,255,0.1);
+}
+
+/* ---- Reactions ---- */
+.msg-bubble {
+  position: relative;
+}
+
+.reaction-bar {
+  position: absolute;
+  top: -36px;
+  left: 0;
+  display: flex;
+  gap: 2px;
+  background: #1c1c24;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  padding: 3px 4px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  z-index: 10;
+  animation: fadeUp 0.15s ease;
+}
+
+.msg-row.mine .reaction-bar {
+  left: auto;
+  right: 0;
+}
+
+.react-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 15px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.react-btn:hover {
+  background: rgba(255,255,255,0.1);
+  transform: scale(1.2);
+}
+
+.reactions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.reaction-badge {
+  font-size: 12px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 6px;
+  padding: 1px 6px;
+  cursor: default;
 }
 
 /* ---- Responsive ---- */
