@@ -47,6 +47,16 @@ export default function App() {
   const messagesEnd = useRef(null);
   const typingTimer = useRef(null);
   const msgCache = useRef({});
+  const currentRoomRef = useRef('general');
+  const myNameRef = useRef('');
+
+  useEffect(() => {
+    currentRoomRef.current = currentRoom;
+  }, [currentRoom]);
+
+  useEffect(() => {
+    myNameRef.current = myName;
+  }, [myName]);
 
   useEffect(() => {
     if (messagesEnd.current) {
@@ -77,23 +87,25 @@ export default function App() {
 
     socket.on('load-messages', (msgs) => {
       setMessages(msgs);
-      msgCache.current[currentRoom] = msgs;
+      msgCache.current[currentRoomRef.current] = msgs;
     });
 
     socket.on('message', (msg) => {
       setMessages((prev) => {
         const next = [...prev, msg];
-        msgCache.current[currentRoom] = next;
+        msgCache.current[currentRoomRef.current] = next;
         return next;
       });
     });
 
     socket.on('room-users', ({ room, users: list }) => {
-      if (room === currentRoom) setRoomUsers(list);
+      if (room === currentRoomRef.current) setRoomUsers(list);
     });
 
     socket.on('typing-update', ({ room, users: list }) => {
-      if (room === currentRoom) setTypingUsers(list.filter((u) => u !== myName));
+      if (room === currentRoomRef.current) {
+        setTypingUsers(list.filter((u) => u !== myNameRef.current));
+      }
     });
 
     socket.on('reaction-update', ({ messageId, reactions }) => {
@@ -103,7 +115,7 @@ export default function App() {
     });
 
     return () => socket.close();
-  }, [currentRoom, myName]);
+  }, []);
 
   const switchRoom = useCallback((room) => {
     if (room === currentRoom) return;
