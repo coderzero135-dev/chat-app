@@ -14,10 +14,12 @@ const ANIMALS = [
 ];
 
 function getOrCreateName() {
-  const saved = localStorage.getItem('anonchat_name');
-  if (saved) return saved;
+  try {
+    const saved = localStorage.getItem('anonchat_name');
+    if (saved) return saved;
+  } catch (_) {}
   const name = randomName();
-  localStorage.setItem('anonchat_name', name);
+  try { localStorage.setItem('anonchat_name', name); } catch (_) {}
   return name;
 }
 
@@ -165,7 +167,7 @@ export default function App() {
   };
 
   const changeIdentity = useCallback(() => {
-    localStorage.removeItem('anonchat_name');
+    try { localStorage.removeItem('anonchat_name'); } catch (_) {}
     window.location.reload();
   }, []);
 
