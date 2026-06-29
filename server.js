@@ -51,6 +51,8 @@ io.on('connection', (socket) => {
     const color = randomColor();
     users.set(socket.id, { username: name, color });
 
+    socket.emit('welcome', { yourId: socket.id, color });
+
     io.emit('message', {
       type: 'system',
       text: `${name} joined`,
@@ -67,6 +69,7 @@ io.on('connection', (socket) => {
 
     io.emit('message', {
       type: 'user',
+      senderId: socket.id,
       username: user.username,
       color: user.color,
       text: msg,
