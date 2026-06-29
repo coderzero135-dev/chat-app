@@ -72,15 +72,15 @@ export default function App() {
     socketRef.current = socket;
 
     socket.on('connect', () => {
+      const name = randomName();
+      setMyName(name);
       setReady(true);
+      socket.emit('join', name);
     });
 
     socket.on('welcome', ({ yourId, color }) => {
       setMyId(yourId);
       setMyColor(color);
-      const name = randomName();
-      setMyName(name);
-      socket.emit('join', name);
     });
 
     socket.on('room-list', (list) => setRoomList(list));
