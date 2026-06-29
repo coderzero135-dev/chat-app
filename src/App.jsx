@@ -13,10 +13,12 @@ const ANIMALS = [
   'Cobra', 'Tiger', 'Shark', 'Falcon', 'Viper', 'Badger'
 ];
 
-function randomName() {
-  const a = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
-  const b = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
-  return `${a} ${b}`;
+function getOrCreateName() {
+  const saved = localStorage.getItem('anonchat_name');
+  if (saved) return saved;
+  const name = randomName();
+  localStorage.setItem('anonchat_name', name);
+  return name;
 }
 
 function getInitials(name) {
@@ -72,7 +74,7 @@ export default function App() {
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      const name = randomName();
+      const name = getOrCreateName();
       setMyName(name);
       setReady(true);
       socket.emit('join', name);
@@ -162,9 +164,10 @@ export default function App() {
     }
   };
 
-  const handleNewRoomKey = (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); createRoom(); }
-  };
+  const changeIdentity = useCallback(() => {
+    localStorage.removeItem('anonchat_name');
+    window.location.reload();
+  }, []);
 
   if (!ready) {
     return (
@@ -244,7 +247,12 @@ export default function App() {
       <main className="main">
         <div className="main-header">
           <span className="room-label"># {currentRoom}</span>
-          {myName && <span className="my-tag">You are {myName}</span>}
+          {myName && (
+            <span className="my-tag">
+              You are {myName}
+              <button className="new-name-btn" onClick={changeIdentity} title="New identity">&#x21bb;</button>
+            </span>
+          )}
           {typingText && <span className="typing-indicator">{typingText}</span>}
         </div>
 

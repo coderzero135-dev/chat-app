@@ -407,6 +407,23 @@ body {
   padding: 3px 10px;
   border-radius: 6px;
   border: 1px solid rgba(255,255,255,0.05);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.new-name-btn {
+  background: none;
+  border: none;
+  color: #52525b;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 2px;
+  transition: color 0.15s;
+}
+
+.new-name-btn:hover {
+  color: #818cf8;
 }
 
 /* ---- Main chat ---- */
