@@ -7,7 +7,7 @@ const os = require('os');
 
 const DATA_DIR = path.join(__dirname, 'data');
 const MESSAGES_DIR = path.join(DATA_DIR, 'rooms');
-[fs.mkdirSync(d, { recursive: true }) for (d of [DATA_DIR, MESSAGES_DIR]) if (!fs.existsSync(d))];
+for (const d of [DATA_DIR, MESSAGES_DIR]) { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); }
 
 const COLORS = [
   '#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6',
