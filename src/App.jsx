@@ -52,6 +52,7 @@ export default function App() {
   const [reactionPicker, setReactionPicker] = useState(null);
   const [newRoomName, setNewRoomName] = useState('');
   const [showNewRoom, setShowNewRoom] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const socketRef = useRef(null);
   const messagesEnd = useRef(null);
@@ -132,6 +133,7 @@ export default function App() {
     setCurrentRoom(room);
     setMessages(msgCache.current[room] || []);
     socketRef.current?.emit('join-room', room);
+    setSidebarOpen(false);
   }, [currentRoom]);
 
   const createRoom = useCallback(() => {
@@ -199,7 +201,8 @@ export default function App() {
     : null;
 
   return (
-    <div className="chat-layout">
+    <div className={`chat-layout ${sidebarOpen ? 'sidebar-open' : ''}`}>
+      {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
       <aside className="sidebar">
         <div className="sidebar-head">
           <div className="sidebar-logo">
@@ -213,6 +216,11 @@ export default function App() {
               <span className="pulse-dot" /> {roomUsers.length} online
             </div>
           </div>
+          <button className="sidebar-close" onClick={() => setSidebarOpen(false)}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
         </div>
 
         <div className="room-section">
@@ -258,6 +266,11 @@ export default function App() {
 
       <main className="main">
         <div className="main-header">
+          <button className="hamburger" onClick={() => setSidebarOpen(true)} aria-label="Menu">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
           <span className="room-label"># {currentRoom}</span>
           {myName && (
             <span className="my-tag">
