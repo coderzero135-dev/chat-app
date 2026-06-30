@@ -141,6 +141,7 @@ export default function App() {
   const [editTopic, setEditTopic] = useState(false);
   const [topicInput, setTopicInput] = useState('');
   const [recording, setRecording] = useState(false);
+  const [voicePreview, setVoicePreview] = useState(null);
   const [giphyOpen, setGiphyOpen] = useState(false);
   const [giphyQuery, setGiphyQuery] = useState('');
   const [giphyResults, setGiphyResults] = useState([]);
@@ -338,19 +339,16 @@ export default function App() {
       mediaRecorder.current = mr;
       audioChunks.current = [];
       mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.current.push(e.data); };
-      mr.onstop = async () => {
+      mr.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(audioChunks.current, { type: 'audio/webm' });
-        const url = await uploadFile(new File([blob], `voice-${Date.now()}.webm`, { type: 'audio/webm' }));
-        if (url && socketRef.current) {
-          socketRef.current.emit('chat-message', JSON.stringify({ type: 'voice', url, name: 'Voice message' }));
-          playSound('send');
-        }
+        const blobUrl = URL.createObjectURL(blob);
+        setVoicePreview({ blob, blobUrl, name: `voice-${Date.now()}.webm` });
       };
       mr.start();
       setRecording(true);
     } catch (_) {}
-  }, [uploadFile]);
+  }, []);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorder.current && mediaRecorder.current.state !== 'inactive') {
@@ -358,6 +356,22 @@ export default function App() {
     }
     setRecording(false);
   }, []);
+
+  const cancelVoice = useCallback(() => {
+    if (voicePreview) URL.revokeObjectURL(voicePreview.blobUrl);
+    setVoicePreview(null);
+  }, [voicePreview]);
+
+  const sendVoice = useCallback(async () => {
+    if (!voicePreview || !socketRef.current) return;
+    const url = await uploadFile(new File([voicePreview.blob], voicePreview.name, { type: 'audio/webm' }));
+    if (url) {
+      socketRef.current.emit('chat-message', JSON.stringify({ type: 'voice', url, name: 'Voice message' }));
+      playSound('send');
+    }
+    URL.revokeObjectURL(voicePreview.blobUrl);
+    setVoicePreview(null);
+  }, [voicePreview, uploadFile]);
 
   const send = useCallback(async () => {
     const text = input.trim();
@@ -775,6 +789,26 @@ export default function App() {
               <span className="file-preview-name">📎 {filePreview.name}</span>
             )}
             <button className="file-preview-cancel" onClick={() => setFilePreview(null)}>&times;</button>
+          </div>
+        )}
+
+        {voicePreview && (
+          <div className="voice-preview-bar">
+            <div className="voice-recording-indicator">
+              <span className="voice-wave">
+                <span className="voice-wave-bar" /><span className="voice-wave-bar" /><span className="voice-wave-bar" />
+                <span className="voice-wave-bar" /><span className="voice-wave-bar" />
+              </span>
+              <audio controls src={voicePreview.blobUrl} className="voice-preview-audio" autoPlay />
+            </div>
+            <div className="voice-preview-actions">
+              <button className="voice-send-btn" onClick={sendVoice} title="Send">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
+                </svg>
+              </button>
+              <button className="voice-cancel-btn" onClick={cancelVoice} title="Cancel">&times;</button>
+            </div>
           </div>
         )}
 
