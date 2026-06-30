@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: chat-app
+    name: anonchat
     env: node
     buildCommand: npm install && npm run build
     startCommand: node server.js

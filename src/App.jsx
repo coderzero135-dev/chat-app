@@ -307,7 +307,7 @@ export default function App() {
 
   useEffect(() => {
     const isCapacitor = typeof window !== 'undefined' && (window.Capacitor || window.Capacitor?.isNative);
-    const serverUrl = isCapacitor ? 'https://chat-app.onrender.com' : undefined;
+    const serverUrl = isCapacitor ? 'https://anonchat.onrender.com' : undefined;
     const socket = io(serverUrl, {
       transports: ['websocket', 'polling'],
       reconnection: true
