@@ -203,7 +203,7 @@ io.on('connection', (socket) => {
     let displayText = msg;
     try {
       const parsed = JSON.parse(msg);
-      if (parsed && (parsed.type === 'image' || parsed.type === 'file')) {
+      if (parsed && (parsed.type === 'image' || parsed.type === 'file' || parsed.type === 'voice')) {
         file = { type: parsed.type, url: parsed.url, name: parsed.name };
         displayText = '';
       }
