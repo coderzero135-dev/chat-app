@@ -1,6 +1,7 @@
 node_modules/
 dist/
 release/
+data/
 android/app/build/
 android/.gradle/
 android/captures/
