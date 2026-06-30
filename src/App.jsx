@@ -67,11 +67,14 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [sendCooldown, setSendCooldown] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const socketRef = useRef(null);
   const messagesEnd = useRef(null);
   const typingTimer = useRef(null);
   const inputRef = useRef(null);
+  const tabFocused = useRef(true);
+  const notifPermitted = useRef(false);
   const msgCache = useRef({});
   const currentRoomRef = useRef('general');
   const myNameRef = useRef('');
@@ -89,6 +92,38 @@ export default function App() {
       messagesEnd.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
+
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().then((p) => { notifPermitted.current = p === 'granted'; });
+    } else if ('Notification' in window && Notification.permission === 'granted') {
+      notifPermitted.current = true;
+    }
+
+    const onFocus = () => {
+      tabFocused.current = true;
+      setUnreadCount(0);
+    };
+    const onBlur = () => { tabFocused.current = false; };
+    const onVis = () => {
+      if (document.visibilityState === 'visible') { tabFocused.current = true; setUnreadCount(0); }
+      else { tabFocused.current = false; }
+    };
+
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('blur', onBlur);
+    document.addEventListener('visibilitychange', onVis);
+
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('blur', onBlur);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, []);
+
+  useEffect(() => {
+    document.title = unreadCount > 0 ? `(${unreadCount}) AnonChat` : 'AnonChat';
+  }, [unreadCount]);
 
   useEffect(() => {
     const isCapacitor = typeof window !== 'undefined' && (window.Capacitor || window.Capacitor?.isNative);
@@ -124,6 +159,18 @@ export default function App() {
         msgCache.current[currentRoomRef.current] = next;
         return next;
       });
+      if (msg.type === 'user' && msg.senderId !== myId) {
+        if (!tabFocused.current || document.visibilityState !== 'visible') {
+          setUnreadCount((c) => c + 1);
+          if (notifPermitted.current) {
+            new Notification(`${msg.username} — #${currentRoomRef.current}`, {
+              body: msg.text.slice(0, 120),
+              icon: '/favicon.ico',
+              tag: 'chat-msg'
+            });
+          }
+        }
+      }
     });
 
     socket.on('room-users', ({ room, users: list }) => {
