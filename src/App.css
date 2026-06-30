@@ -1039,6 +1039,7 @@ input, button { font-family: inherit; }
 .mic-btn {
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
   color: #fff;
+  touch-action: none;
 }
 
 .mic-btn.recording {

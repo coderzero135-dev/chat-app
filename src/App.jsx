@@ -410,14 +410,28 @@ export default function App() {
     } catch (_) { return null; }
   }, []);
 
-  const startRecording = useCallback(async () => {
-    if (micGranted === false) return;
-    recordingActive.current = true;
+  const requestMicPermission = useCallback(async () => {
+    if (micGranted === true) return true;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      if (!recordingActive.current) { stream.getTracks().forEach(t => t.stop()); return; }
+      stream.getTracks().forEach((t) => t.stop());
       setMicGranted(true);
-      const mr = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm' });
+      return true;
+    } catch (_) {
+      setMicGranted(false);
+      return false;
+    }
+  }, [micGranted]);
+
+  const startRecording = useCallback(async () => {
+    if (!micGranted) {
+      const ok = await requestMicPermission();
+      if (!ok) return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordingActive.current = true;
+      const mr = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
       mediaRecorder.current = mr;
       audioChunks.current = [];
       mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.current.push(e.data); };
@@ -428,12 +442,19 @@ export default function App() {
         setRecordingTime(0);
         recordingTimeRef.current = 0;
         recordingActive.current = false;
-        if (dur < 0.5 || audioChunks.current.length === 0) { setRecording(false); return; }
-        const blob = new Blob(audioChunks.current, { type: 'audio/webm' });
-        const blobUrl = URL.createObjectURL(blob);
-        setVoicePreview({ blob, blobUrl, name: `voice-${Date.now()}.webm`, duration: dur });
+        setRecording(false);
+        setRecordingLocked(false);
+        if (dur >= 0.5 && audioChunks.current.length > 0) {
+          const blob = new Blob(audioChunks.current, { type: 'audio/webm' });
+          const blobUrl = URL.createObjectURL(blob);
+          setVoicePreview({ blob, blobUrl, name: `voice-${Date.now()}.webm`, duration: dur });
+        }
       };
-      mr.onerror = () => { setRecording(false); clearInterval(recordTimer.current); recordingActive.current = false; };
+      mr.onerror = () => {
+        setRecording(false); setRecordingLocked(false);
+        clearInterval(recordTimer.current);
+        recordingActive.current = false;
+      };
       mr.start(100);
       setRecording(true);
       setRecordingLocked(false);
@@ -448,30 +469,30 @@ export default function App() {
       setRecording(false);
       recordingActive.current = false;
     }
-  }, [micGranted]);
+  }, [micGranted, requestMicPermission]);
 
   const stopRecording = useCallback(() => {
-    recordingActive.current = false;
     if (recordingLocked) return;
     if (mediaRecorder.current && mediaRecorder.current.state === 'recording') {
       mediaRecorder.current.stop();
+    } else {
+      recordingActive.current = false;
     }
   }, [recordingLocked]);
 
-  const lockRecording = useCallback(() => {
-    setRecordingLocked(true);
-  }, []);
+  const lockRecording = useCallback(() => setRecordingLocked(true), []);
 
   const cancelRecording = useCallback(() => {
     recordingActive.current = false;
     if (mediaRecorder.current && mediaRecorder.current.state === 'recording') {
-      mediaRecorder.current.ondataavailable = null;
+      mediaRecorder.current.ondataavailable = () => {};
       mediaRecorder.current.stop();
+    } else {
+      clearInterval(recordTimer.current);
+      setRecording(false);
+      setRecordingLocked(false);
+      setRecordingTime(0);
     }
-    clearInterval(recordTimer.current);
-    setRecording(false);
-    setRecordingLocked(false);
-    setRecordingTime(0);
   }, []);
 
   const cancelVoice = useCallback(() => {
@@ -980,10 +1001,11 @@ export default function App() {
               </button>
             ) : (
               <button className={`send-btn mic-btn ${recording ? 'recording' : ''}`}
-                onPointerDown={(e) => { e.preventDefault(); recordStartY.current = e.clientY; startRecording(); }}
+                onPointerDown={(e) => { e.preventDefault(); recordStartY.current = e.clientY; if (micGranted) startRecording(); else requestMicPermission(); }}
                 onPointerUp={(e) => { e.preventDefault(); stopRecording(); }}
                 onPointerMove={(e) => { if (recording && e.clientY < recordStartY.current - 60) lockRecording(); }}
-                title="Hold to record, slide up to lock"
+                title={micGranted ? "Hold to record, slide up to lock" : "Tap to enable mic"}
+                style={{ touchAction: 'none', userSelect: 'none' }}
                 disabled={micGranted === false}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
