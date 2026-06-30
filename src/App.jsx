@@ -111,6 +111,75 @@ async function searchGiphy(query) {
   } catch (_) { return []; }
 }
 
+function VoiceBubble({ url, isMine, msgId, playingId, setPlayingId }) {
+  const audioRef = useRef(null);
+  const [playing, setPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const intervalRef = useRef(null);
+
+  useEffect(() => {
+    if (playingId !== msgId && playing) {
+      audioRef.current?.pause();
+      setPlaying(false);
+    }
+  }, [playingId, msgId, playing]);
+
+  useEffect(() => {
+    return () => clearInterval(intervalRef.current);
+  }, []);
+
+  const toggle = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (a.paused) {
+      a.play();
+      setPlaying(true);
+      setPlayingId(msgId);
+      intervalRef.current = setInterval(() => setCurrentTime(a.currentTime), 100);
+    } else {
+      a.pause();
+      setPlaying(false);
+      setPlayingId(null);
+      clearInterval(intervalRef.current);
+    }
+  };
+
+  const onLoaded = (e) => setDuration(e.target.duration);
+  const onEnded = () => { setPlaying(false); setPlayingId(null); clearInterval(intervalRef.current); setCurrentTime(0); };
+
+  const bars = 20;
+  const progress = duration > 0 ? currentTime / duration : 0;
+  const filledBars = Math.floor(progress * bars);
+  const displayTime = playing ? currentTime : (duration || 0);
+
+  return (
+    <div className={`voice-msg ${isMine ? 'voice-mine' : 'voice-theirs'}`}>
+      <button className="voice-play-btn" onClick={toggle}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          {playing
+            ? <><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></>
+            : <polygon points="8,5 19,12 8,19"/>}
+        </svg>
+      </button>
+      <div className="voice-waveform">
+        {Array.from({ length: bars }).map((_, i) => (
+          <span key={i} className={`voice-bar ${i < filledBars ? 'filled' : ''}`}
+            style={{ height: `${8 + ((i * 7 + 3) % 13)}px` }} />
+        ))}
+      </div>
+      <span className="voice-time">{formatVoiceTime(displayTime)}</span>
+      <audio ref={audioRef} src={url} preload="metadata" onLoadedMetadata={onLoaded} onEnded={onEnded} />
+    </div>
+  );
+}
+
+function formatVoiceTime(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 export default function App() {
   const [messages, setMessages] = useState([]);
   const [hasOlder, setHasOlder] = useState(false);
@@ -145,6 +214,7 @@ export default function App() {
   const [micGranted, setMicGranted] = useState(null);
   const [recordingTime, setRecordingTime] = useState(0);
   const [recordingLocked, setRecordingLocked] = useState(false);
+  const [playingVoiceId, setPlayingVoiceId] = useState(null);
   const [giphyOpen, setGiphyOpen] = useState(false);
   const [giphyQuery, setGiphyQuery] = useState('');
   const [giphyResults, setGiphyResults] = useState([]);
@@ -782,7 +852,8 @@ export default function App() {
                       <a href={m.file.url} target="_blank" rel="noopener noreferrer" className="msg-file">📎 {m.file.name}</a>
                     )}
                     {m.file && m.file.type === 'voice' && (
-                      <audio controls src={m.file.url} className="msg-audio" preload="metadata" />
+                      <VoiceBubble url={m.file.url} isMine={isMine} msgId={m.id}
+                        playingId={playingVoiceId} setPlayingId={setPlayingVoiceId} />
                     )}
                     {renderContent(m.text)}
                     {reactionPicker === m.id && (
