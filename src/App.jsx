@@ -425,15 +425,6 @@ export default function App() {
 
   const renderMessageText = useCallback((text) => {
     if (!text) return null;
-    try {
-      const parsed = JSON.parse(text);
-      if (parsed && parsed.type === 'image') {
-        return <img src={parsed.url} alt={parsed.name} className="msg-image" loading="lazy" />;
-      }
-      if (parsed && parsed.type === 'file') {
-        return <a href={parsed.url} target="_blank" rel="noopener noreferrer" className="msg-file">📎 {parsed.name}</a>;
-      }
-    } catch (_) {}
     const parts = parseMentions(text);
     return parts.map((p, i) =>
       p.type === 'mention'
@@ -582,6 +573,12 @@ export default function App() {
                   <div className={`msg-bubble ${isMine ? 'bubble-mine' : 'bubble-theirs'} ${showAvatar ? (isMine ? 'first-mine' : 'first-theirs') : ''}`}
                     onMouseEnter={() => setReactionPicker(m.id)}
                     onMouseLeave={() => setReactionPicker(null)}>
+                    {m.file && m.file.type === 'image' && (
+                      <img src={m.file.url} alt={m.file.name} className="msg-image" loading="lazy" />
+                    )}
+                    {m.file && m.file.type === 'file' && (
+                      <a href={m.file.url} target="_blank" rel="noopener noreferrer" className="msg-file">📎 {m.file.name}</a>
+                    )}
                     {renderMessageText(m.text)}
                     {reactionPicker === m.id && (
                       <div className="reaction-bar" onClick={(e) => e.stopPropagation()}>

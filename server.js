@@ -188,13 +188,24 @@ io.on('connection', (socket) => {
     if (now - last < RATE_LIMIT_MS) return;
     lastMessageTime.set(socket.id, now);
 
+    let file = null;
+    let displayText = msg;
+    try {
+      const parsed = JSON.parse(msg);
+      if (parsed && (parsed.type === 'image' || parsed.type === 'file')) {
+        file = { type: parsed.type, url: parsed.url, name: parsed.name };
+        displayText = '';
+      }
+    } catch (_) {}
+
     const message = {
       id: now.toString(36) + Math.random().toString(36).slice(2, 7),
       type: 'user',
       senderId: socket.id,
       username: user.username,
       color: user.color,
-      text: msg,
+      text: displayText,
+      file: file,
       time: now,
       reactions: {}
     };
