@@ -8,7 +8,10 @@ export default defineConfig(({ mode }) => ({
     host: '0.0.0.0',
     port: 5173,
     proxy: {
-      '/socket.io': 'http://localhost:3001'
+      '/socket.io': {
+        target: 'http://localhost:3001',
+        ws: true
+      }
     }
   },
   build: {

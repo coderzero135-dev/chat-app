@@ -414,6 +414,22 @@ input, button { font-family: inherit; }
 
 .new-name-btn:hover { color: #818cf8; }
 
+.notif-btn {
+  background: none; border: none;
+  color: #f59e0b;
+  cursor: pointer;
+  padding: 0 4px;
+  display: flex; align-items: center;
+  animation: pulse 2s infinite;
+}
+
+.notif-btn:hover { color: #fbbf24; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 /* ---- Msg area ---- */
 .msg-area {
   flex: 1;

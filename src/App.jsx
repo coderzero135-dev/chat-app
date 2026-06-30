@@ -94,9 +94,7 @@ export default function App() {
   }, [messages]);
 
   useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission().then((p) => { notifPermitted.current = p === 'granted'; });
-    } else if ('Notification' in window && Notification.permission === 'granted') {
+    if ('Notification' in window && Notification.permission === 'granted') {
       notifPermitted.current = true;
     }
 
@@ -249,6 +247,13 @@ export default function App() {
     window.location.reload();
   }, []);
 
+  const enableNotifications = useCallback(() => {
+    if (!('Notification' in window)) return;
+    Notification.requestPermission().then((p) => {
+      notifPermitted.current = p === 'granted';
+    });
+  }, []);
+
   const insertEmoji = useCallback((emoji) => {
     const el = inputRef.current;
     if (!el) { setInput((prev) => prev + emoji); return; }
@@ -366,6 +371,13 @@ export default function App() {
               You are {myName}
               <button className="new-name-btn" onClick={changeIdentity} title="New identity">&#x21bb;</button>
             </span>
+          )}
+          {!notifPermitted.current && 'Notification' in window && Notification.permission !== 'denied' && (
+            <button className="notif-btn" onClick={enableNotifications} title="Enable notifications">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+              </svg>
+            </button>
           )}
         </div>
 
