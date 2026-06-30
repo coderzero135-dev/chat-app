@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { io } from 'socket.io-client';
 
 const REACT_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
@@ -50,6 +50,54 @@ function formatTime(ts) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function parseMentions(text) {
+  const parts = [];
+  const re = /@(\S+)/g;
+  let last = 0;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push({ type: 'text', text: text.slice(last, m.index) });
+    parts.push({ type: 'mention', text: m[1] });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push({ type: 'text', text: text.slice(last) });
+  return parts;
+}
+
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playSound(type) {
+  try {
+    const ctx = getAudioCtx();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g);
+    g.connect(ctx.destination);
+    const now = ctx.currentTime;
+    if (type === 'send') {
+      o.type = 'sine';
+      o.frequency.setValueAtTime(800, now);
+      o.frequency.setValueAtTime(600, now + 0.06);
+      g.gain.setValueAtTime(0.12, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+      o.start(now);
+      o.stop(now + 0.12);
+    } else {
+      o.type = 'sine';
+      o.frequency.setValueAtTime(880, now);
+      o.frequency.setValueAtTime(1100, now + 0.05);
+      g.gain.setValueAtTime(0.15, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+      o.start(now);
+      o.stop(now + 0.15);
+    }
+  } catch (_) {}
+}
+
 export default function App() {
   const [messages, setMessages] = useState([]);
   const [roomUsers, setRoomUsers] = useState([]);
@@ -68,11 +116,18 @@ export default function App() {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [sendCooldown, setSendCooldown] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('anonchat_theme') || 'dark'; } catch (_) { return 'dark'; }
+  });
+  const [mentionQuery, setMentionQuery] = useState(null);
+  const [mentionIdx, setMentionIdx] = useState(0);
+  const [filePreview, setFilePreview] = useState(null);
 
   const socketRef = useRef(null);
   const messagesEnd = useRef(null);
   const typingTimer = useRef(null);
   const inputRef = useRef(null);
+  const fileRef = useRef(null);
   const tabFocused = useRef(true);
   const notifPermitted = useRef(false);
   const msgCache = useRef({});
@@ -92,6 +147,11 @@ export default function App() {
       messagesEnd.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
+
+  useEffect(() => {
+    document.body.className = `theme-${theme}`;
+    try { localStorage.setItem('anonchat_theme', theme); } catch (_) {}
+  }, [theme]);
 
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'granted') {
@@ -158,11 +218,13 @@ export default function App() {
         return next;
       });
       if (msg.type === 'user' && msg.senderId !== myId) {
-        if (!tabFocused.current || document.visibilityState !== 'visible') {
+        playSound('receive');
+        const mentionedMe = msg.text && myNameRef.current && msg.text.includes(`@${myNameRef.current}`);
+        if (!tabFocused.current || document.visibilityState !== 'visible' || mentionedMe) {
           setUnreadCount((c) => c + 1);
           if (notifPermitted.current) {
             new Notification(`${msg.username} — #${currentRoomRef.current}`, {
-              body: msg.text.slice(0, 120),
+              body: mentionedMe ? `@${myNameRef.current} ${msg.text.slice(0, 100)}` : msg.text.slice(0, 120),
               icon: '/favicon.ico',
               tag: 'chat-msg'
             });
@@ -209,17 +271,43 @@ export default function App() {
     setShowNewRoom(false);
   }, [newRoomName]);
 
-  const send = useCallback(() => {
+  const uploadFile = useCallback(async (file) => {
+    const form = new FormData();
+    form.append('file', file);
+    try {
+      const res = await fetch('/upload', { method: 'POST', body: form });
+      const data = await res.json();
+      return data.url;
+    } catch (_) {
+      return null;
+    }
+  }, []);
+
+  const send = useCallback(async () => {
     const text = input.trim();
-    if (!text || !socketRef.current || sendCooldown) return;
-    socketRef.current.emit('chat-message', text);
+    const f = filePreview;
+    const hasContent = text || f;
+    if (!hasContent || !socketRef.current || sendCooldown) return;
+
+    if (f) {
+      const url = await uploadFile(f.file);
+      if (url) {
+        socketRef.current.emit('chat-message', JSON.stringify({ type: f.type, url, name: f.name }));
+      }
+    }
+    if (text) {
+      socketRef.current.emit('chat-message', text);
+    }
     setInput('');
+    setFilePreview(null);
     setShowEmojiPicker(false);
     setSendCooldown(true);
+    setMentionQuery(null);
+    playSound('send');
     setTimeout(() => setSendCooldown(false), 350);
     if (typingTimer.current) clearTimeout(typingTimer.current);
     socketRef.current.emit('typing', false);
-  }, [input, sendCooldown]);
+  }, [input, sendCooldown, filePreview, uploadFile]);
 
   const handleTyping = useCallback((val) => {
     setInput(val);
@@ -228,7 +316,38 @@ export default function App() {
     typingTimer.current = setTimeout(() => {
       socketRef.current?.emit('typing', false);
     }, 2000);
-  }, []);
+
+    const atMatch = val.match(/@(\S*)$/);
+    if (atMatch && roomUsers.length > 0) {
+      const q = atMatch[1].toLowerCase();
+      const hits = roomUsers.filter((u) => u !== myNameRef.current && u.toLowerCase().includes(q));
+      if (hits.length > 0) {
+        setMentionQuery({ q, hits });
+        setMentionIdx(0);
+        return;
+      }
+    }
+    setMentionQuery(null);
+  }, [roomUsers]);
+
+  const insertMention = useCallback((username) => {
+    const el = inputRef.current;
+    if (!el) return;
+    const val = input;
+    const atPos = val.lastIndexOf('@', el.selectionStart);
+    if (atPos < 0) return;
+    const before = val.slice(0, atPos);
+    const after = val.slice(el.selectionStart);
+    const next = before + '@' + username + ' ' + after;
+    setInput(next);
+    setMentionQuery(null);
+    setTimeout(() => {
+      const pos = before.length + username.length + 2;
+      el.selectionStart = el.selectionEnd = pos;
+      el.focus();
+    }, 0);
+    handleTyping(next);
+  }, [input, handleTyping]);
 
   const handleReact = useCallback((messageId, emoji) => {
     socketRef.current?.emit('react', { messageId, emoji });
@@ -236,6 +355,12 @@ export default function App() {
   }, []);
 
   const handleKeyDown = (e) => {
+    if (mentionQuery) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIdx((i) => Math.min(i + 1, mentionQuery.hits.length - 1)); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setMentionIdx((i) => Math.max(i - 1, 0)); return; }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertMention(mentionQuery.hits[mentionIdx]); return; }
+      if (e.key === 'Escape') { e.preventDefault(); setMentionQuery(null); return; }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       send();
@@ -252,6 +377,30 @@ export default function App() {
     Notification.requestPermission().then((p) => {
       notifPermitted.current = p === 'granted';
     });
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
+  }, []);
+
+  const handleFilePick = useCallback(() => {
+    fileRef.current?.click();
+  }, []);
+
+  const handleFileChange = useCallback((e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const isImg = f.type.startsWith('image/');
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setFilePreview({ file: f, name: f.name, type: isImg ? 'image' : 'file', dataUrl: ev.target.result });
+    };
+    reader.readAsDataURL(f);
+    e.target.value = '';
+  }, []);
+
+  const cancelFilePreview = useCallback(() => {
+    setFilePreview(null);
   }, []);
 
   const insertEmoji = useCallback((emoji) => {
@@ -273,6 +422,25 @@ export default function App() {
   const handleNewRoomKey = (e) => {
     if (e.key === 'Enter') { e.preventDefault(); createRoom(); }
   };
+
+  const renderMessageText = useCallback((text) => {
+    if (!text) return null;
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && parsed.type === 'image') {
+        return <img src={parsed.url} alt={parsed.name} className="msg-image" loading="lazy" />;
+      }
+      if (parsed && parsed.type === 'file') {
+        return <a href={parsed.url} target="_blank" rel="noopener noreferrer" className="msg-file">📎 {parsed.name}</a>;
+      }
+    } catch (_) {}
+    const parts = parseMentions(text);
+    return parts.map((p, i) =>
+      p.type === 'mention'
+        ? <span key={i} className={`mention ${p.text === myName ? 'mention-me' : ''}`}>@{p.text}</span>
+        : <span key={i}>{p.text}</span>
+    );
+  }, [myName]);
 
   if (!ready) {
     return (
@@ -346,7 +514,7 @@ export default function App() {
           <div className="section-label">ONLINE — {currentRoom}</div>
           <ul className="user-list">
             {roomUsers.map((u) => (
-              <li key={u} className="user-row">
+              <li key={u} className="user-row" onClick={() => { setInput((prev) => prev + '@' + u + ' '); inputRef.current?.focus(); }}>
                 <div className="avatar-sm" style={{ background: myColor }}>
                   {getInitials(u)}
                 </div>
@@ -366,6 +534,17 @@ export default function App() {
             </svg>
           </button>
           <span className="room-label"># {currentRoom}</span>
+          <button className="theme-toggle" onClick={toggleTheme} title="Toggle theme">
+            {theme === 'dark' ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+              </svg>
+            )}
+          </button>
           {myName && (
             <span className="my-tag">
               You are {myName}
@@ -403,7 +582,7 @@ export default function App() {
                   <div className={`msg-bubble ${isMine ? 'bubble-mine' : 'bubble-theirs'} ${showAvatar ? (isMine ? 'first-mine' : 'first-theirs') : ''}`}
                     onMouseEnter={() => setReactionPicker(m.id)}
                     onMouseLeave={() => setReactionPicker(null)}>
-                    {m.text}
+                    {renderMessageText(m.text)}
                     {reactionPicker === m.id && (
                       <div className="reaction-bar" onClick={(e) => e.stopPropagation()}>
                         {REACT_EMOJIS.map((e) => (
@@ -442,7 +621,17 @@ export default function App() {
           <div ref={messagesEnd} />
         </div>
 
-        <div className="input-area">
+        {filePreview && (
+          <div className="file-preview-bar">
+            {filePreview.type === 'image' ? (
+              <img src={filePreview.dataUrl} alt="" className="file-preview-img" />
+            ) : (
+              <span className="file-preview-name">📎 {filePreview.name}</span>
+            )}
+            <button className="file-preview-cancel" onClick={cancelFilePreview}>&times;</button>
+          </div>
+        )}
+        <div className="input-area" style={{ position: 'relative' }}>
           <div className="input-bar">
             <button className="emoji-toggle" onClick={() => setShowEmojiPicker((v) => !v)} title="Emoji">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -452,18 +641,36 @@ export default function App() {
                 <line x1="15" y1="9" x2="15.01" y2="9" />
               </svg>
             </button>
+            <button className="emoji-toggle" onClick={handleFilePick} title="Attach file">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+              </svg>
+            </button>
+            <input ref={fileRef} type="file" className="file-input-hidden" onChange={handleFileChange} accept="image/*,.pdf,.doc,.docx,.txt,.zip" />
             <input ref={inputRef} className="chat-input" placeholder={`Message #${currentRoom}`}
               value={input}
               onChange={(e) => handleTyping(e.target.value)}
               onKeyDown={handleKeyDown}
               autoFocus />
-            <button className={`send-btn ${sendCooldown ? 'cooling' : ''}`} onClick={send} disabled={!input.trim() || sendCooldown}>
+            <button className={`send-btn ${sendCooldown ? 'cooling' : ''}`} onClick={send} disabled={(!input.trim() && !filePreview) || sendCooldown}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="22" y1="2" x2="11" y2="13" />
                 <polygon points="22 2 15 22 11 13 2 9 22 2" />
               </svg>
             </button>
           </div>
+          {mentionQuery && (
+            <div className="mention-dropdown">
+              {mentionQuery.hits.map((u, idx) => (
+                <button key={u} className={`mention-item ${idx === mentionIdx ? 'active' : ''}`}
+                  onClick={() => insertMention(u)}
+                  onMouseEnter={() => setMentionIdx(idx)}>
+                  <span className="mention-avatar" style={{ background: myColor }}>{getInitials(u)}</span>
+                  {u}
+                </button>
+              ))}
+            </div>
+          )}
           {showEmojiPicker && (
             <>
               <div className="emoji-backdrop" onClick={() => setShowEmojiPicker(false)} />

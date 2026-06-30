@@ -5,10 +5,48 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+:root, .theme-dark {
+  --bg: #09090b;
+  --bg-card: #18181b;
+  --bg-input: rgba(255,255,255,0.04);
+  --border: rgba(255,255,255,0.08);
+  --text: #f1f1f3;
+  --text-dim: #71717a;
+  --text-muted: #52525b;
+  --accent: #6366f1;
+  --accent-light: #818cf8;
+  --hover: rgba(255,255,255,0.06);
+  --bubble-mine: linear-gradient(135deg, #6366f1, #8b5cf6);
+  --bubble-theirs: #18181b;
+  --bubble-theirs-border: #27272a;
+  --sidebar-bg: rgba(14,14,18,1);
+  --input-bar-bg: rgba(14,14,18,0.9);
+  --header-bg: transparent;
+}
+
+.theme-light {
+  --bg: #f4f4f5;
+  --bg-card: #ffffff;
+  --bg-input: #f4f4f5;
+  --border: rgba(0,0,0,0.08);
+  --text: #18181b;
+  --text-dim: #71717a;
+  --text-muted: #a1a1aa;
+  --accent: #6366f1;
+  --accent-light: #4f46e5;
+  --hover: rgba(0,0,0,0.04);
+  --bubble-mine: linear-gradient(135deg, #6366f1, #8b5cf6);
+  --bubble-theirs: #ffffff;
+  --bubble-theirs-border: #e4e4e7;
+  --sidebar-bg: #ffffff;
+  --input-bar-bg: rgba(255,255,255,0.95);
+  --header-bg: transparent;
+}
+
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background: #09090b;
-  color: #f1f1f3;
+  background: var(--bg);
+  color: var(--text);
   overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
 }
@@ -667,6 +705,149 @@ input, button { font-family: inherit; }
 }
 
 .emoji-item:hover { background: rgba(255,255,255,0.08); }
+
+/* ---- Theme toggle ---- */
+.theme-toggle {
+  background: none; border: none;
+  color: #a1a1aa;
+  cursor: pointer;
+  padding: 4px;
+  display: flex; align-items: center;
+}
+.theme-toggle:hover { color: var(--text); }
+
+/* ---- Mention dropdown ---- */
+.mention-dropdown {
+  position: absolute;
+  bottom: 100%;
+  left: 0; right: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 12px;
+  margin-bottom: 4px;
+  z-index: 10;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+
+.mention-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: none; border: none;
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.mention-item.active, .mention-item:hover { background: rgba(99,102,241,0.15); }
+
+.mention-avatar {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+/* ---- Mentions in messages ---- */
+.mention { color: #818cf8; font-weight: 600; }
+.mention-me { background: rgba(99,102,241,0.2); padding: 1px 4px; border-radius: 4px; color: #a5b4fc; }
+
+/* ---- File upload ---- */
+.file-input-hidden { display: none; }
+
+.file-preview-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 14px;
+  background: #18181b;
+  border-top: 1px solid #27272a;
+}
+
+.file-preview-img {
+  width: 60px; height: 60px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.file-preview-name {
+  font-size: 13px; color: var(--text-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 1;
+}
+
+.file-preview-cancel {
+  background: none; border: none;
+  color: #ef4444;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+/* ---- Message images/files ---- */
+.msg-image {
+  max-width: 240px;
+  max-height: 240px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: block;
+}
+
+.msg-file {
+  color: #818cf8;
+  text-decoration: none;
+  font-size: 13px;
+  display: flex; align-items: center; gap: 6px;
+}
+
+.msg-file:hover { text-decoration: underline; }
+
+/* ---- User list clickable ---- */
+.user-row { cursor: pointer; }
+.user-row:hover { background: rgba(255,255,255,0.04); }
+
+/* ---- Light theme overrides ---- */
+.theme-light .join-screen { background: var(--bg); }
+.theme-light .join-card { background: #fff; border-color: #e4e4e7; color: var(--text); }
+.theme-light .dim { color: #a1a1aa; }
+.theme-light .sidebar { background: #fff; border-right-color: #e4e4e7; }
+.theme-light .main { background: var(--bg); }
+.theme-light .msg-area { background: var(--bg); }
+.theme-light .input-bar { background: rgba(255,255,255,0.95); border-top-color: #e4e4e7; }
+.theme-light .chat-input { background: #f4f4f5; border-color: #e4e4e7; color: var(--text); }
+.theme-light .chat-input::placeholder { color: #a1a1aa; }
+.theme-light .chat-input:focus { border-color: rgba(99,102,241,0.4); }
+.theme-light .msg-system { color: #a1a1aa; }
+.theme-light .msg-sender { color: var(--text); }
+.theme-light .msg-time { color: #a1a1aa; }
+.theme-light .msg-bubble { background: var(--bg); }
+.theme-light .bubble-theirs { background: #fff; border-color: #e4e4e7; }
+.theme-light .section-label { color: #a1a1aa; }
+.theme-light .room-item { color: var(--text); }
+.theme-light .room-item:hover { background: rgba(0,0,0,0.04); }
+.theme-light .room-item.active { background: rgba(99,102,241,0.1); color: var(--accent); }
+.theme-light .new-room-btn { color: #a1a1aa; }
+.theme-light .new-room-btn:hover { color: var(--accent); }
+.theme-light .emoji-toggle { background: #f4f4f5; border-color: #e4e4e7; color: #a1a1aa; }
+.theme-light .emoji-panel { background: #fff; border-color: #e4e4e7; }
+.theme-light .emoji-item:hover { background: rgba(0,0,0,0.06); }
+.theme-light .mention-dropdown { background: #fff; border-color: #e4e4e7; }
+.theme-light .file-preview-bar { background: #fff; border-top-color: #e4e4e7; }
+.theme-light .user-row:hover { background: rgba(0,0,0,0.04); }
+.theme-light .sidebar-title { color: var(--text); }
+.theme-light .sidebar-count { color: #a1a1aa; }
+.theme-light .loader { border-color: #e4e4e7; border-top-color: var(--accent); }
+.theme-light .reaction-bar { background: #fff; border-color: #e4e4e7; }
+.theme-light .reaction-badge { background: #f4f4f5; }
+.theme-light .typing-bubble { background: #fff; border-color: #e4e4e7; }
+.theme-light .typing-avatar { background: #e4e4e7 !important; }
+.theme-light .typing-dot { background: #a1a1aa; }
+.theme-light .room-label { color: var(--text); }
+.theme-light .main-header { border-bottom-color: #e4e4e7; }
 
 /* ---- Scrollbar ---- */
 ::-webkit-scrollbar { width: 3px; }

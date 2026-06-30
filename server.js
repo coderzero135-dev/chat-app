@@ -5,14 +5,17 @@ const path = require('path');
 const fs = require('fs');
 const fsp = require('fs').promises;
 const os = require('os');
+const multer = require('multer');
 
 const MAX_MESSAGE_LENGTH = 2000;
 const MAX_MSG_PER_ROOM = 500;
 const RATE_LIMIT_MS = 300;
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
 const DATA_DIR = path.join(__dirname, 'data');
 const MESSAGES_DIR = path.join(DATA_DIR, 'rooms');
-for (const d of [DATA_DIR, MESSAGES_DIR]) { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); }
+const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
+for (const d of [DATA_DIR, MESSAGES_DIR, UPLOADS_DIR]) { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); }
 
 const COLORS = [
   '#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6',
@@ -75,6 +78,23 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
 app.use(express.static(path.join(__dirname, 'dist')));
+app.use('/uploads', express.static(UPLOADS_DIR));
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: UPLOADS_DIR,
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname);
+      cb(null, `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,6)}${ext}`);
+    }
+  }),
+  limits: { fileSize: MAX_FILE_SIZE }
+});
+
+app.post('/upload', upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file' });
+  res.json({ url: `/uploads/${req.file.filename}` });
+});
 
 let discovery = null;
 try { discovery = require('./discovery'); } catch (_) {}
