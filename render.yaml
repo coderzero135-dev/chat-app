@@ -1,7 +1,0 @@
-services:
-  - type: web
-    name: anonchat
-    env: node
-    buildCommand: npm install && npm run build
-    startCommand: node server.js
-    plan: free
