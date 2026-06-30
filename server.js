@@ -105,11 +105,13 @@ app.post('/upload', upload.single('file'), (req, res) => {
 let discovery = null;
 try { discovery = require('./discovery'); } catch (_) {}
 
-const users = new Map();        // socket.id -> { username, color, room }
+const users = new Map();        // socket.id -> { username, color, room, lastActive }
 const rooms = new Map();        // roomName -> Set of socket IDs
 const roomTopics = new Map();   // roomName -> { topic, description }
 const typingTimers = new Map(); // roomName -> Map<socketId, username>
 const lastMessageTime = new Map(); // socket.id -> timestamp for rate limiting
+const userStatus = new Map();   // username -> 'online' | 'away'
+const readReceipts = new Map(); // roomName -> Map<socketId, lastReadMsgId>
 
 // Ensure "general" room exists
 rooms.set('general', new Set());
@@ -123,7 +125,9 @@ io.on('connection', (socket) => {
   socket.on('join', async (username) => {
     const name = String(username || 'Anon').trim().slice(0, 20);
     const color = randomColor();
-    users.set(socket.id, { username: name, color, room: currentRoom });
+    users.set(socket.id, { username: name, color, room: currentRoom, lastActive: Date.now() });
+    userStatus.set(name, 'online');
+    broadcastStatus();
 
     socket.emit('welcome', { yourId: socket.id, color });
 
@@ -292,6 +296,7 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     const user = users.get(socket.id);
     if (user) {
+      userStatus.set(user.username, 'away');
       clearTyping(socket.id, user.room);
       rooms.get(user.room)?.delete(socket.id);
       io.to(user.room).emit('message', {
@@ -303,8 +308,39 @@ io.on('connection', (socket) => {
     }
     users.delete(socket.id);
     lastMessageTime.delete(socket.id);
+    broadcastStatus();
   });
-});
+
+  socket.on('mark-read', (messageId) => {
+    const user = users.get(socket.id);
+    if (!user || !messageId) return;
+    if (!readReceipts.has(currentRoom)) readReceipts.set(currentRoom, new Map());
+    readReceipts.get(currentRoom).set(socket.id, messageId);
+    broadcastReadReceipts(currentRoom);
+  });
+
+  socket.on('create-poll', ({ question, options }) => {
+    const user = users.get(socket.id);
+    if (!user || !question || !Array.isArray(options) || options.length < 2) return;
+    const now = Date.now();
+    const pollMsg = {
+      id: now.toString(36) + Math.random().toString(36).slice(2, 7),
+      type: 'user',
+      senderId: socket.id,
+      username: user.username,
+      color: user.color,
+      time: now,
+      poll: { question, options: options.map((o) => ({ text: o, votes: [] })) },
+      reactions: {}
+    };
+    io.to(currentRoom).emit('message', pollMsg);
+  });
+
+  socket.on('vote-poll', ({ messageId, optionIndex }) => {
+    const user = users.get(socket.id);
+    if (!user || messageId == null || optionIndex == null) return;
+    io.to(currentRoom).emit('poll-vote', { messageId, optionIndex, voterId: socket.id });
+  });
 
 function broadcastRoomUsers(room) {
   const list = [];
@@ -328,6 +364,19 @@ function clearTyping(socketId, room) {
     if (roomTimers.size === 0) typingTimers.delete(room);
     broadcastTyping(room);
   }
+}
+
+function broadcastStatus() {
+  const statuses = {};
+  userStatus.forEach((v, k) => { statuses[k] = v; });
+  io.emit('user-status', statuses);
+}
+
+function broadcastReadReceipts(room) {
+  const receipts = {};
+  const rr = readReceipts.get(room);
+  if (rr) rr.forEach((msgId, sid) => { receipts[sid] = msgId; });
+  io.to(room).emit('read-receipts', receipts);
 }
 
 app.get('/health', (_req, res) => res.json({ ok: true, rooms: rooms.size, users: users.size }));

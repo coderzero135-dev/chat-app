@@ -217,6 +217,14 @@ export default function App() {
   const [playingVoiceId, setPlayingVoiceId] = useState(null);
   const [giphyOpen, setGiphyOpen] = useState(false);
   const [showPlusMenu, setShowPlusMenu] = useState(false);
+  const [userStatuses, setUserStatuses] = useState({});
+  const [readReceipts, setReadReceipts] = useState({});
+  const [stickerOpen, setStickerOpen] = useState(false);
+  const [stickerQuery, setStickerQuery] = useState('');
+  const [stickerResults, setStickerResults] = useState([]);
+  const [pollOpen, setPollOpen] = useState(false);
+  const [pollQuestion, setPollQuestion] = useState('');
+  const [pollOptions, setPollOptions] = useState(['', '']);
   const [giphyQuery, setGiphyQuery] = useState('');
   const [giphyResults, setGiphyResults] = useState([]);
   const [replyTo, setReplyTo] = useState(null);
@@ -247,6 +255,10 @@ export default function App() {
   useEffect(() => {
     if (messagesEnd.current) {
       messagesEnd.current.scrollIntoView({ behavior: 'smooth' });
+    }
+    const last = messages[messages.length - 1];
+    if (last && last.type === 'user' && last.senderId !== myId) {
+      socketRef.current?.emit('mark-read', last.id);
     }
   }, [messages]);
 
@@ -371,6 +383,24 @@ export default function App() {
     socket.on('reaction-update', ({ messageId, reactions }) => {
       setMessages((prev) =>
         prev.map((m) => (m.id === messageId ? { ...m, reactions } : m))
+      );
+    });
+
+    socket.on('user-status', (statuses) => setUserStatuses(statuses));
+
+    socket.on('read-receipts', (receipts) => setReadReceipts(receipts));
+
+    socket.on('poll-vote', ({ messageId, optionIndex, voterId }) => {
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== messageId || !m.poll) return m;
+          const updated = { ...m, poll: { ...m.poll, options: m.poll.options.map((o, i) => {
+            if (i !== optionIndex) return o;
+            const hasVoted = o.votes.includes(voterId);
+            return { ...o, votes: hasVoted ? o.votes.filter((v) => v !== voterId) : [...o.votes, voterId] };
+          })}};
+          return updated;
+        })
       );
     });
 
@@ -655,6 +685,37 @@ export default function App() {
     setGiphyResults([]);
   }, []);
 
+  const searchStickers = useCallback(async (q) => {
+    setStickerQuery(q);
+    if (q.length < 2) { setStickerResults([]); return; }
+    try {
+      const res = await fetch(`https://api.giphy.com/v1/stickers/search?api_key=1v4qTWNi2CXOk0bMGRlJppNQoSIJWgI9&q=${encodeURIComponent(q)}&limit=20&rating=g`);
+      const data = await res.json();
+      setStickerResults(data.data.map((g) => g.images.fixed_height_small.url));
+    } catch (_) { setStickerResults([]); }
+  }, []);
+
+  const sendSticker = useCallback((url) => {
+    if (socketRef.current) {
+      socketRef.current.emit('chat-message', JSON.stringify({ type: 'image', url, name: 'Sticker' }));
+      playSound('send');
+    }
+    setStickerOpen(false);
+    setStickerQuery('');
+    setStickerResults([]);
+  }, []);
+
+  const createPoll = useCallback(() => {
+    const q = pollQuestion.trim();
+    const opts = pollOptions.map((o) => o.trim()).filter(Boolean);
+    if (!q || opts.length < 2 || !socketRef.current) return;
+    socketRef.current.emit('create-poll', { question: q, options: opts });
+    setPollOpen(false);
+    setPollQuestion('');
+    setPollOptions(['', '']);
+    playSound('send');
+  }, [pollQuestion, pollOptions]);
+
   const insertEmoji = useCallback((emoji) => {
     const el = inputRef.current;
     if (!el) { setInput((prev) => prev + emoji); return; }
@@ -761,8 +822,9 @@ export default function App() {
           <ul className="user-list">
             {roomUsers.map((u) => (
               <li key={u} className="user-row" onClick={() => { setInput((prev) => prev + '@' + u + ' '); inputRef.current?.focus(); }}>
-                <div className="avatar-sm" style={{ background: myColor }}>
+                <div className="avatar-sm status-avatar" style={{ background: myColor }}>
                   {getInitials(u)}
+                  <span className={`status-dot ${userStatuses[u] === 'online' ? 'online' : 'away'}`} />
                 </div>
                 <span className="user-name">{u}</span>
                 {u === myName && <span className="you-tag">you</span>}
@@ -862,6 +924,25 @@ export default function App() {
                       <VoiceBubble url={m.file.url} isMine={isMine} msgId={m.id}
                         playingId={playingVoiceId} setPlayingId={setPlayingVoiceId} />
                     )}
+                    {m.poll && (
+                      <div className="poll-card">
+                        <div className="poll-question">{m.poll.question}</div>
+                        {m.poll.options.map((opt, idx) => {
+                          const total = m.poll.options.reduce((s, o) => s + o.votes.length, 0);
+                          const pct = total > 0 ? Math.round((opt.votes.length / total) * 100) : 0;
+                          const iVoted = opt.votes.includes(myId);
+                          return (
+                            <button key={idx} className={`poll-option ${iVoted ? 'voted' : ''}`}
+                              onClick={() => socketRef.current?.emit('vote-poll', { messageId: m.id, optionIndex: idx })}>
+                              <span className="poll-opt-text">{opt.text}</span>
+                              <span className="poll-opt-bar" style={{ width: `${pct}%` }} />
+                              <span className="poll-opt-pct">{pct}%</span>
+                            </button>
+                          );
+                        })}
+                        <div className="poll-total">{m.poll.options.reduce((s, o) => s + o.votes.length, 0)} votes</div>
+                      </div>
+                    )}
                     {renderContent(m.text)}
                     {reactionPicker === m.id && (
                       <div className="reaction-bar" onClick={(e) => e.stopPropagation()}>
@@ -869,8 +950,44 @@ export default function App() {
                           <button key={e} className="react-btn" onClick={() => handleReact(m.id, e)}>{e}</button>
                         ))}
                       </div>
+          )}
+          {stickerOpen && (
+            <>
+              <div className="emoji-backdrop" onClick={() => { setStickerOpen(false); setStickerQuery(''); setStickerResults([]); }} />
+              <div className="giphy-panel">
+                <input className="giphy-search" placeholder="Search stickers..." value={stickerQuery}
+                  onChange={(e) => searchStickers(e.target.value)} autoFocus />
+                <div className="giphy-grid">
+                  {stickerResults.map((url, i) => (
+                    <img key={i} src={url} alt="" className="giphy-item" onClick={() => sendSticker(url)} loading="lazy" />
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+          {pollOpen && (
+            <>
+              <div className="emoji-backdrop" onClick={() => setPollOpen(false)} />
+              <div className="poll-panel">
+                <input className="poll-input" placeholder="Poll question..." value={pollQuestion}
+                  onChange={(e) => setPollQuestion(e.target.value)} maxLength={200} autoFocus />
+                {pollOptions.map((opt, i) => (
+                  <div key={i} className="poll-opt-row">
+                    <input className="poll-input" placeholder={`Option ${i + 1}`} value={opt}
+                      onChange={(e) => { const n = [...pollOptions]; n[i] = e.target.value; setPollOptions(n); }} maxLength={100} />
+                    {pollOptions.length > 2 && (
+                      <button className="btn-xs cancel" onClick={() => setPollOptions(pollOptions.filter((_, j) => j !== i))}>&times;</button>
                     )}
                   </div>
+                ))}
+                <div className="poll-actions">
+                  <button className="btn-xs" onClick={() => setPollOptions([...pollOptions, ''])}>+ Option</button>
+                  <button className="btn-xs" onClick={createPoll} style={{ background: 'var(--accent)', color: '#fff', border: 'none' }}>Create Poll</button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
                   {hasReactions && (
                     <div className="reactions">
                       {Object.entries(m.reactions).map(([emoji, ids]) => (
@@ -878,7 +995,14 @@ export default function App() {
                       ))}
                     </div>
                   )}
-                  <span className="msg-time">{formatTime(m.time)}</span>
+                  <span className="msg-time">
+                    {isMine && (
+                      <span className="msg-check">
+                        {Object.values(readReceipts).some((msgId) => messages.some((mm) => mm.id === msgId && mm.id === m.id)) ? '✓✓' : '✓'}
+                      </span>
+                    )}
+                    {formatTime(m.time)}
+                  </span>
                 </div>
                 {isMine && showAvatar && (
                   <div className="avatar" style={{ background: myColor }}>{getInitials(myName)}</div>
@@ -960,6 +1084,14 @@ export default function App() {
                     </button>
                     <button className="plus-item" onClick={() => { setGiphyOpen((v) => !v); setShowPlusMenu(false); }}>
                       <span className="plus-gif-label">GIF</span>
+                    </button>
+                    <button className="plus-item" onClick={() => { setStickerOpen((v) => !v); setShowPlusMenu(false); }}>
+                      <span>😺</span>
+                      <span>Sticker</span>
+                    </button>
+                    <button className="plus-item" onClick={() => { setPollOpen((v) => !v); setShowPlusMenu(false); }}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/></svg>
+                      <span>Poll</span>
                     </button>
                   </div>
                 </>
