@@ -993,11 +993,56 @@ input, button { font-family: inherit; }
 .theme-light .voice-time { color: #71717a; }
 .theme-light .voice-mine .voice-time { color: rgba(255,255,255,0.7); }
 
-/* ---- Recording button ---- */
-.emoji-toggle.recording {
-  background: #ef4444;
-  border-color: #ef4444;
+/* ---- Plus menu (attach/emoji/gif) ---- */
+.plus-menu-wrap { position: relative; flex-shrink: 0; }
+
+.plus-backdrop { position: fixed; inset: 0; z-index: 9; }
+
+.plus-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 14px;
+  padding: 6px;
+  z-index: 10;
+  display: flex; gap: 4px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  animation: fadeUp 0.15s ease;
+}
+
+.plus-item {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 8px 12px;
+  background: none; border: none;
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 10px;
+  min-width: 56px;
+}
+
+.plus-item:hover { background: rgba(255,255,255,0.06); }
+
+.plus-gif-label {
+  font-weight: 800; font-size: 14px;
+  padding: 2px 4px;
+  border: 2px solid currentColor;
+  border-radius: 4px;
+}
+
+.theme-light .plus-menu { background: #fff; border-color: #e4e4e7; }
+.theme-light .plus-item:hover { background: rgba(0,0,0,0.05); }
+
+/* ---- Mic button (send-btn style) ---- */
+.mic-btn {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
   color: #fff;
+}
+
+.mic-btn.recording {
+  background: #ef4444;
 }
 
 /* ---- Recording overlay ---- */

@@ -216,6 +216,7 @@ export default function App() {
   const [recordingLocked, setRecordingLocked] = useState(false);
   const [playingVoiceId, setPlayingVoiceId] = useState(null);
   const [giphyOpen, setGiphyOpen] = useState(false);
+  const [showPlusMenu, setShowPlusMenu] = useState(false);
   const [giphyQuery, setGiphyQuery] = useState('');
   const [giphyResults, setGiphyResults] = useState([]);
   const [replyTo, setReplyTo] = useState(null);
@@ -236,6 +237,7 @@ export default function App() {
   const recordTimer = useRef(null);
   const recordStartY = useRef(0);
   const recordingTimeRef = useRef(0);
+  const recordingActive = useRef(false);
   const loadingOlder = useRef(false);
   const firstMsgRef = useRef(null);
 
@@ -410,8 +412,10 @@ export default function App() {
 
   const startRecording = useCallback(async () => {
     if (micGranted === false) return;
+    recordingActive.current = true;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!recordingActive.current) { stream.getTracks().forEach(t => t.stop()); return; }
       setMicGranted(true);
       const mr = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm' });
       mediaRecorder.current = mr;
@@ -423,12 +427,13 @@ export default function App() {
         const dur = recordingTimeRef.current;
         setRecordingTime(0);
         recordingTimeRef.current = 0;
-        if (dur < 0.5 || audioChunks.current.length === 0) return;
+        recordingActive.current = false;
+        if (dur < 0.5 || audioChunks.current.length === 0) { setRecording(false); return; }
         const blob = new Blob(audioChunks.current, { type: 'audio/webm' });
         const blobUrl = URL.createObjectURL(blob);
         setVoicePreview({ blob, blobUrl, name: `voice-${Date.now()}.webm`, duration: dur });
       };
-      mr.onerror = () => { setRecording(false); clearInterval(recordTimer.current); };
+      mr.onerror = () => { setRecording(false); clearInterval(recordTimer.current); recordingActive.current = false; };
       mr.start(100);
       setRecording(true);
       setRecordingLocked(false);
@@ -441,15 +446,16 @@ export default function App() {
     } catch (_) {
       setMicGranted(false);
       setRecording(false);
+      recordingActive.current = false;
     }
   }, [micGranted]);
 
   const stopRecording = useCallback(() => {
+    recordingActive.current = false;
     if (recordingLocked) return;
     if (mediaRecorder.current && mediaRecorder.current.state === 'recording') {
       mediaRecorder.current.stop();
     }
-    setRecording(false);
   }, [recordingLocked]);
 
   const lockRecording = useCallback(() => {
@@ -457,6 +463,7 @@ export default function App() {
   }, []);
 
   const cancelRecording = useCallback(() => {
+    recordingActive.current = false;
     if (mediaRecorder.current && mediaRecorder.current.state === 'recording') {
       mediaRecorder.current.ondataavailable = null;
       mediaRecorder.current.stop();
@@ -933,46 +940,57 @@ export default function App() {
 
         <div className="input-area" style={{ position: 'relative' }}>
           <div className="input-bar">
-            <button className="emoji-toggle" onClick={() => setShowEmojiPicker((v) => !v)} title="Emoji">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10" />
-                <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-                <line x1="9" y1="9" x2="9.01" y2="9" /><line x1="15" y1="9" x2="15.01" y2="9" />
-              </svg>
-            </button>
-            <button className="emoji-toggle" onClick={handleFilePick} title="Attach file">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-              </svg>
-            </button>
-            <button className={`emoji-toggle ${recording ? 'recording' : ''}`}
-              onPointerDown={(e) => { e.preventDefault(); recordStartY.current = e.clientY; startRecording(); }}
-              onPointerUp={(e) => { e.preventDefault(); stopRecording(); }}
-              onPointerMove={(e) => { if (recording && e.clientY < recordStartY.current - 60) lockRecording(); }}
-              title="Hold to record, slide up to lock"
-              disabled={micGranted === false}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
-              </svg>
-            </button>
-            <button className="emoji-toggle" onClick={() => setGiphyOpen((v) => !v)} title="GIF">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="2" width="20" height="20" rx="4"/><text x="12" y="16" textAnchor="middle" fontSize="10" fontWeight="bold" fill="currentColor">GIF</text>
-              </svg>
-            </button>
+            <div className="plus-menu-wrap">
+              <button className="emoji-toggle" onClick={() => setShowPlusMenu((v) => !v)} title="More">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+              </button>
+              {showPlusMenu && (
+                <>
+                  <div className="plus-backdrop" onClick={() => setShowPlusMenu(false)} />
+                  <div className="plus-menu">
+                    <button className="plus-item" onClick={() => { setShowEmojiPicker(true); setShowPlusMenu(false); }}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+                      <span>Emoji</span>
+                    </button>
+                    <button className="plus-item" onClick={() => { handleFilePick(); setShowPlusMenu(false); }}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                      <span>File</span>
+                    </button>
+                    <button className="plus-item" onClick={() => { setGiphyOpen((v) => !v); setShowPlusMenu(false); }}>
+                      <span className="plus-gif-label">GIF</span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
             <input ref={fileRef} type="file" className="file-input-hidden" onChange={handleFileChange} accept="image/*,.pdf,.doc,.docx,.txt,.zip" />
             <input ref={inputRef} className="chat-input" placeholder={`Message #${currentRoom}`}
               value={input}
               onChange={(e) => handleTyping(e.target.value)}
               onKeyDown={handleKeyDown}
               autoFocus />
-            <button className={`send-btn ${sendCooldown ? 'cooling' : ''}`} onClick={send} disabled={(!input.trim() && !filePreview) || sendCooldown}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="22" y1="2" x2="11" y2="13" />
-                <polygon points="22 2 15 22 11 13 2 9 22 2" />
-              </svg>
-            </button>
+            {input.trim() || filePreview ? (
+              <button className={`send-btn ${sendCooldown ? 'cooling' : ''}`} onClick={send} disabled={(!input.trim() && !filePreview) || sendCooldown}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13" />
+                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                </svg>
+              </button>
+            ) : (
+              <button className={`send-btn mic-btn ${recording ? 'recording' : ''}`}
+                onPointerDown={(e) => { e.preventDefault(); recordStartY.current = e.clientY; startRecording(); }}
+                onPointerUp={(e) => { e.preventDefault(); stopRecording(); }}
+                onPointerMove={(e) => { if (recording && e.clientY < recordStartY.current - 60) lockRecording(); }}
+                title="Hold to record, slide up to lock"
+                disabled={micGranted === false}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+                </svg>
+              </button>
+            )}
           </div>
           {mentionQuery && (
             <div className="mention-dropdown">
