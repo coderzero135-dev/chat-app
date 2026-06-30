@@ -142,7 +142,9 @@ export default function App() {
   const [topicInput, setTopicInput] = useState('');
   const [recording, setRecording] = useState(false);
   const [voicePreview, setVoicePreview] = useState(null);
-  const [micGranted, setMicGranted] = useState(null); // null=unknown, true=granted, false=denied
+  const [micGranted, setMicGranted] = useState(null);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [recordingLocked, setRecordingLocked] = useState(false);
   const [giphyOpen, setGiphyOpen] = useState(false);
   const [giphyQuery, setGiphyQuery] = useState('');
   const [giphyResults, setGiphyResults] = useState([]);
@@ -161,6 +163,9 @@ export default function App() {
   const myNameRef = useRef('');
   const mediaRecorder = useRef(null);
   const audioChunks = useRef([]);
+  const recordTimer = useRef(null);
+  const recordStartY = useRef(0);
+  const recordingTimeRef = useRef(0);
   const loadingOlder = useRef(false);
   const firstMsgRef = useRef(null);
 
@@ -344,15 +349,25 @@ export default function App() {
       mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.current.push(e.data); };
       mr.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
-        if (audioChunks.current.length > 0) {
-          const blob = new Blob(audioChunks.current, { type: 'audio/webm' });
-          const blobUrl = URL.createObjectURL(blob);
-          setVoicePreview({ blob, blobUrl, name: `voice-${Date.now()}.webm` });
-        }
+        clearInterval(recordTimer.current);
+        const dur = recordingTimeRef.current;
+        setRecordingTime(0);
+        recordingTimeRef.current = 0;
+        if (dur < 0.5 || audioChunks.current.length === 0) return;
+        const blob = new Blob(audioChunks.current, { type: 'audio/webm' });
+        const blobUrl = URL.createObjectURL(blob);
+        setVoicePreview({ blob, blobUrl, name: `voice-${Date.now()}.webm`, duration: dur });
       };
-      mr.onerror = () => setRecording(false);
+      mr.onerror = () => { setRecording(false); clearInterval(recordTimer.current); };
       mr.start(100);
       setRecording(true);
+      setRecordingLocked(false);
+      recordingTimeRef.current = 0;
+      setRecordingTime(0);
+      recordTimer.current = setInterval(() => {
+        recordingTimeRef.current += 0.1;
+        setRecordingTime(recordingTimeRef.current);
+      }, 100);
     } catch (_) {
       setMicGranted(false);
       setRecording(false);
@@ -360,10 +375,26 @@ export default function App() {
   }, [micGranted]);
 
   const stopRecording = useCallback(() => {
+    if (recordingLocked) return;
     if (mediaRecorder.current && mediaRecorder.current.state === 'recording') {
       mediaRecorder.current.stop();
     }
     setRecording(false);
+  }, [recordingLocked]);
+
+  const lockRecording = useCallback(() => {
+    setRecordingLocked(true);
+  }, []);
+
+  const cancelRecording = useCallback(() => {
+    if (mediaRecorder.current && mediaRecorder.current.state === 'recording') {
+      mediaRecorder.current.ondataavailable = null;
+      mediaRecorder.current.stop();
+    }
+    clearInterval(recordTimer.current);
+    setRecording(false);
+    setRecordingLocked(false);
+    setRecordingTime(0);
   }, []);
 
   const cancelVoice = useCallback(() => {
@@ -844,10 +875,10 @@ export default function App() {
               </svg>
             </button>
             <button className={`emoji-toggle ${recording ? 'recording' : ''}`}
-              onPointerDown={(e) => { e.preventDefault(); startRecording(); }}
+              onPointerDown={(e) => { e.preventDefault(); recordStartY.current = e.clientY; startRecording(); }}
               onPointerUp={(e) => { e.preventDefault(); stopRecording(); }}
-              onPointerLeave={(e) => { if (recording) { e.preventDefault(); stopRecording(); } }}
-              title="Hold to record voice"
+              onPointerMove={(e) => { if (recording && e.clientY < recordStartY.current - 60) lockRecording(); }}
+              title="Hold to record, slide up to lock"
               disabled={micGranted === false}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
@@ -909,6 +940,37 @@ export default function App() {
             </>
           )}
         </div>
+
+        {recording && (
+          <div className="record-overlay">
+            <div className="record-container">
+              {recordingLocked ? (
+                <div className="record-locked">
+                  <span className="record-lock-icon">🔒</span>
+                  <span className="record-hint">Recording locked — tap to stop</span>
+                </div>
+              ) : (
+                <div className="record-hold-hint">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                  <span>Slide up to lock recording</span>
+                </div>
+              )}
+              <div className="record-wave">
+                {Array.from({ length: 16 }).map((_, i) => (
+                  <span key={i} className="record-bar" style={{ animationDelay: `${i * 0.07}s`, height: `${12 + Math.sin(i * 0.7) * 10}px` }} />
+                ))}
+              </div>
+              <div className="record-info">
+                <span className="record-timer">{recordingTime.toFixed(1)}s</span>
+                <span className="record-dot" />
+              </div>
+              <button className="record-cancel-btn" onClick={cancelRecording}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            </div>
+          </div>
+        )}
+
       </main>
 
       {contextMenu && (

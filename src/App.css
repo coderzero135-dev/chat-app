@@ -947,8 +947,83 @@ input, button { font-family: inherit; }
   background: #ef4444;
   border-color: #ef4444;
   color: #fff;
+}
+
+/* ---- Recording overlay ---- */
+.record-overlay {
+  flex-shrink: 0;
+  padding: 12px 16px 16px;
+  background: #18181b;
+  border-top: 1px solid #27272a;
+  animation: fadeUp 0.2s ease;
+}
+
+.record-container {
+  display: flex; align-items: center; gap: 12px;
+}
+
+.record-hold-hint, .record-locked {
+  display: flex; align-items: center; gap: 4px;
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: nowrap;
+  animation: fadeUp 0.2s ease;
+}
+
+.record-lock-icon { font-size: 14px; }
+
+.record-wave {
+  display: flex; align-items: center; gap: 2px;
+  flex: 1;
+  justify-content: center;
+  height: 32px;
+}
+
+.record-bar {
+  width: 3px;
+  background: #ef4444;
+  border-radius: 2px;
+  animation: recordBar 0.6s ease-in-out infinite alternate;
+  min-height: 6px;
+}
+
+@keyframes recordBar {
+  0% { transform: scaleY(0.4); opacity: 0.6; }
+  100% { transform: scaleY(1); opacity: 1; }
+}
+
+.record-info {
+  display: flex; align-items: center; gap: 8px;
+}
+
+.record-timer {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  min-width: 48px;
+}
+
+.record-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
   animation: pulse 1s infinite;
 }
+
+.record-cancel-btn {
+  width: 40px; height: 40px;
+  background: rgba(239,68,68,0.12);
+  border: none; border-radius: 50%;
+  color: #ef4444;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+
+.record-cancel-btn:hover { background: rgba(239,68,68,0.25); }
+.theme-light .record-overlay { background: #fff; border-top-color: #e4e4e7; }
+.theme-light .record-bar { background: #ef4444; }
 
 /* ---- Voice preview bar ---- */
 .voice-preview-bar {
