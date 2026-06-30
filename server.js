@@ -45,11 +45,17 @@ function sanitize(name) {
   return name.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50) || 'general';
 }
 
-async function loadMessages(room) {
+async function loadMessages(room, beforeId) {
   const rp = roomPath(room);
   try {
     if (fs.existsSync(rp)) {
-      return JSON.parse(await fsp.readFile(rp, 'utf-8'));
+      const all = JSON.parse(await fsp.readFile(rp, 'utf-8'));
+      if (beforeId) {
+        const idx = all.findIndex((m) => m.id === beforeId);
+        if (idx > 0) return all.slice(Math.max(0, idx - 50), idx);
+        return [];
+      }
+      return all.slice(-50);
     }
   } catch (e) {
     console.error(`[chat] failed to load messages for room ${room}:`, e.message);
@@ -101,6 +107,7 @@ try { discovery = require('./discovery'); } catch (_) {}
 
 const users = new Map();        // socket.id -> { username, color, room }
 const rooms = new Map();        // roomName -> Set of socket IDs
+const roomTopics = new Map();   // roomName -> { topic, description }
 const typingTimers = new Map(); // roomName -> Map<socketId, username>
 const lastMessageTime = new Map(); // socket.id -> timestamp for rate limiting
 
@@ -122,6 +129,8 @@ io.on('connection', (socket) => {
 
     socket.emit('room-list', loadRoomList());
     socket.emit('load-messages', await loadMessages(currentRoom));
+    const topic = roomTopics.get(currentRoom);
+    if (topic) socket.emit('room-topic', { room: currentRoom, topic: topic.topic });
     broadcastRoomUsers(currentRoom);
 
     io.to(currentRoom).emit('message', {
@@ -167,6 +176,8 @@ io.on('connection', (socket) => {
     if (user) {
       user.room = name;
       socket.emit('load-messages', await loadMessages(name));
+      const topic = roomTopics.get(name);
+      socket.emit('room-topic', { room: name, topic: topic?.topic || null });
       io.to(name).emit('message', {
         type: 'system',
         text: `${user.username} joined`,
@@ -252,6 +263,30 @@ io.on('connection', (socket) => {
 
     await saveMessages(currentRoom, messages);
     io.to(currentRoom).emit('reaction-update', { messageId, reactions: msg.reactions });
+  });
+
+  socket.on('delete-message', async (messageId) => {
+    const user = users.get(socket.id);
+    if (!user || !messageId) return;
+    const messages = await loadMessages(currentRoom);
+    const idx = messages.findIndex((m) => m.id === messageId && m.senderId === socket.id);
+    if (idx < 0) return;
+    messages.splice(idx, 1);
+    await saveMessages(currentRoom, messages);
+    io.to(currentRoom).emit('message-deleted', { messageId });
+  });
+
+  socket.on('set-topic', (topic) => {
+    if (!rooms.has(currentRoom)) return;
+    const t = String(topic || '').trim().slice(0, 100);
+    if (t) roomTopics.set(currentRoom, { topic: t });
+    else roomTopics.delete(currentRoom);
+    io.to(currentRoom).emit('room-topic', { room: currentRoom, topic: t || null });
+  });
+
+  socket.on('load-older', async (beforeId) => {
+    const older = await loadMessages(currentRoom, beforeId);
+    socket.emit('older-messages', older);
   });
 
   socket.on('disconnect', () => {

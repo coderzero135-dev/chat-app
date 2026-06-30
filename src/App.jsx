@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
 
 const REACT_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
@@ -50,14 +50,19 @@ function formatTime(ts) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function parseMentions(text) {
+function parseMarkdown(text) {
+  if (!text) return null;
   const parts = [];
-  const re = /@(\S+)/g;
+  const re = /(\*\*(.+?)\*\*)|(\*(.+?)\*)|(`(.+?)`)|(@\S+)|((https?:\/\/\S+))/g;
   let last = 0;
   let m;
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) parts.push({ type: 'text', text: text.slice(last, m.index) });
-    parts.push({ type: 'mention', text: m[1] });
+    if (m[1]) parts.push({ type: 'bold', text: m[2] });
+    else if (m[3]) parts.push({ type: 'italic', text: m[4] });
+    else if (m[5]) parts.push({ type: 'code', text: m[6] });
+    else if (m[7]) parts.push({ type: 'mention', text: m[7] });
+    else if (m[8]) parts.push({ type: 'link', text: m[8] });
     last = m.index + m[0].length;
   }
   if (last < text.length) parts.push({ type: 'text', text: text.slice(last) });
@@ -98,8 +103,17 @@ function playSound(type) {
   } catch (_) {}
 }
 
+async function searchGiphy(query) {
+  try {
+    const res = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=1v4qTWNi2CXOk0bMGRlJppNQoSIJWgI9&q=${encodeURIComponent(query)}&limit=20&rating=g`);
+    const data = await res.json();
+    return data.data.map((g) => g.images.fixed_height_small.url);
+  } catch (_) { return []; }
+}
+
 export default function App() {
   const [messages, setMessages] = useState([]);
+  const [hasOlder, setHasOlder] = useState(false);
   const [roomUsers, setRoomUsers] = useState([]);
   const [typingUsers, setTypingUsers] = useState([]);
   const [roomList, setRoomList] = useState(['general']);
@@ -122,9 +136,19 @@ export default function App() {
   const [mentionQuery, setMentionQuery] = useState(null);
   const [mentionIdx, setMentionIdx] = useState(0);
   const [filePreview, setFilePreview] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null);
+  const [roomTopic, setRoomTopic] = useState(null);
+  const [editTopic, setEditTopic] = useState(false);
+  const [topicInput, setTopicInput] = useState('');
+  const [recording, setRecording] = useState(false);
+  const [giphyOpen, setGiphyOpen] = useState(false);
+  const [giphyQuery, setGiphyQuery] = useState('');
+  const [giphyResults, setGiphyResults] = useState([]);
+  const [replyTo, setReplyTo] = useState(null);
 
   const socketRef = useRef(null);
   const messagesEnd = useRef(null);
+  const msgAreaRef = useRef(null);
   const typingTimer = useRef(null);
   const inputRef = useRef(null);
   const fileRef = useRef(null);
@@ -133,20 +157,33 @@ export default function App() {
   const msgCache = useRef({});
   const currentRoomRef = useRef('general');
   const myNameRef = useRef('');
+  const mediaRecorder = useRef(null);
+  const audioChunks = useRef([]);
+  const loadingOlder = useRef(false);
+  const firstMsgRef = useRef(null);
 
-  useEffect(() => {
-    currentRoomRef.current = currentRoom;
-  }, [currentRoom]);
-
-  useEffect(() => {
-    myNameRef.current = myName;
-  }, [myName]);
+  useEffect(() => { currentRoomRef.current = currentRoom; }, [currentRoom]);
+  useEffect(() => { myNameRef.current = myName; }, [myName]);
 
   useEffect(() => {
     if (messagesEnd.current) {
       messagesEnd.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
+
+  useEffect(() => {
+    if (firstMsgRef.current && msgAreaRef.current) {
+      const io = new IntersectionObserver(([entry]) => {
+        if (entry.isIntersecting && hasOlder && !loadingOlder.current) {
+          loadingOlder.current = true;
+          const oldest = messages[0];
+          if (oldest) socketRef.current?.emit('load-older', oldest.id);
+        }
+      }, { root: msgAreaRef.current, threshold: 0.1 });
+      io.observe(firstMsgRef.current);
+      return () => io.disconnect();
+    }
+  }, [messages, hasOlder]);
 
   useEffect(() => {
     document.body.className = `theme-${theme}`;
@@ -157,21 +194,15 @@ export default function App() {
     if ('Notification' in window && Notification.permission === 'granted') {
       notifPermitted.current = true;
     }
-
-    const onFocus = () => {
-      tabFocused.current = true;
-      setUnreadCount(0);
-    };
+    const onFocus = () => { tabFocused.current = true; setUnreadCount(0); };
     const onBlur = () => { tabFocused.current = false; };
     const onVis = () => {
       if (document.visibilityState === 'visible') { tabFocused.current = true; setUnreadCount(0); }
       else { tabFocused.current = false; }
     };
-
     window.addEventListener('focus', onFocus);
     window.addEventListener('blur', onBlur);
     document.addEventListener('visibilitychange', onVis);
-
     return () => {
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('blur', onBlur);
@@ -208,7 +239,14 @@ export default function App() {
 
     socket.on('load-messages', (msgs) => {
       setMessages(msgs);
+      setHasOlder(msgs.length >= 50);
       msgCache.current[currentRoomRef.current] = msgs;
+    });
+
+    socket.on('older-messages', (older) => {
+      loadingOlder.current = false;
+      if (older.length < 50) setHasOlder(false);
+      setMessages((prev) => [...older, ...prev]);
     });
 
     socket.on('message', (msg) => {
@@ -219,18 +257,26 @@ export default function App() {
       });
       if (msg.type === 'user' && msg.senderId !== myId) {
         playSound('receive');
-        const mentionedMe = msg.text && myNameRef.current && msg.text.includes(`@${myNameRef.current}`);
+        const mentionedMe = msg.text && myNameRef.current && (msg.text.includes(`@${myNameRef.current}`) || (typeof msg.text === 'string' && msg.text.match(new RegExp(`@${myNameRef.current}\\b`))));
         if (!tabFocused.current || document.visibilityState !== 'visible' || mentionedMe) {
           setUnreadCount((c) => c + 1);
           if (notifPermitted.current) {
             new Notification(`${msg.username} — #${currentRoomRef.current}`, {
-              body: mentionedMe ? `@${myNameRef.current} ${msg.text.slice(0, 100)}` : msg.text.slice(0, 120),
+              body: (msg.text || '').slice(0, 120),
               icon: '/favicon.ico',
               tag: 'chat-msg'
             });
           }
         }
       }
+    });
+
+    socket.on('message-deleted', ({ messageId }) => {
+      setMessages((prev) => prev.filter((m) => m.id !== messageId));
+    });
+
+    socket.on('room-topic', ({ room, topic }) => {
+      if (room === currentRoomRef.current) setRoomTopic(topic);
     });
 
     socket.on('room-users', ({ room, users: list }) => {
@@ -258,7 +304,11 @@ export default function App() {
   const switchRoom = useCallback((room) => {
     if (room === currentRoom) return;
     setCurrentRoom(room);
-    setMessages(msgCache.current[room] || []);
+    setRoomTopic(null);
+    setReplyTo(null);
+    const cached = msgCache.current[room];
+    if (cached) { setMessages(cached); setHasOlder(cached.length >= 50); }
+    else setMessages([]);
     socketRef.current?.emit('join-room', room);
     setSidebarOpen(false);
   }, [currentRoom]);
@@ -278,9 +328,35 @@ export default function App() {
       const res = await fetch('/upload', { method: 'POST', body: form });
       const data = await res.json();
       return data.url;
-    } catch (_) {
-      return null;
+    } catch (_) { return null; }
+  }, []);
+
+  const startRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      mediaRecorder.current = mr;
+      audioChunks.current = [];
+      mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.current.push(e.data); };
+      mr.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(audioChunks.current, { type: 'audio/webm' });
+        const url = await uploadFile(new File([blob], `voice-${Date.now()}.webm`, { type: 'audio/webm' }));
+        if (url && socketRef.current) {
+          socketRef.current.emit('chat-message', JSON.stringify({ type: 'voice', url, name: 'Voice message' }));
+          playSound('send');
+        }
+      };
+      mr.start();
+      setRecording(true);
+    } catch (_) {}
+  }, [uploadFile]);
+
+  const stopRecording = useCallback(() => {
+    if (mediaRecorder.current && mediaRecorder.current.state !== 'inactive') {
+      mediaRecorder.current.stop();
     }
+    setRecording(false);
   }, []);
 
   const send = useCallback(async () => {
@@ -303,6 +379,7 @@ export default function App() {
     setShowEmojiPicker(false);
     setSendCooldown(true);
     setMentionQuery(null);
+    setReplyTo(null);
     playSound('send');
     setTimeout(() => setSendCooldown(false), 350);
     if (typingTimer.current) clearTimeout(typingTimer.current);
@@ -321,11 +398,7 @@ export default function App() {
     if (atMatch && roomUsers.length > 0) {
       const q = atMatch[1].toLowerCase();
       const hits = roomUsers.filter((u) => u !== myNameRef.current && u.toLowerCase().includes(q));
-      if (hits.length > 0) {
-        setMentionQuery({ q, hits });
-        setMentionIdx(0);
-        return;
-      }
+      if (hits.length > 0) { setMentionQuery({ q, hits }); setMentionIdx(0); return; }
     }
     setMentionQuery(null);
   }, [roomUsers]);
@@ -354,6 +427,29 @@ export default function App() {
     setReactionPicker(null);
   }, []);
 
+  const handleContextMenu = useCallback((e, msg) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, message: msg, isMine: msg.senderId === myId });
+  }, [myId]);
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
+  const copyMessage = useCallback((text) => {
+    navigator.clipboard.writeText(text).catch(() => {});
+    setContextMenu(null);
+  }, []);
+
+  const deleteMessage = useCallback((messageId) => {
+    socketRef.current?.emit('delete-message', messageId);
+    setContextMenu(null);
+  }, []);
+
+  const replyToMessage = useCallback((msg) => {
+    setReplyTo(msg);
+    setContextMenu(null);
+    inputRef.current?.focus();
+  }, []);
+
   const handleKeyDown = (e) => {
     if (mentionQuery) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIdx((i) => Math.min(i + 1, mentionQuery.hits.length - 1)); return; }
@@ -366,6 +462,12 @@ export default function App() {
       send();
     }
   };
+
+  useEffect(() => {
+    const handler = () => setContextMenu(null);
+    window.addEventListener('click', handler);
+    return () => window.removeEventListener('click', handler);
+  }, []);
 
   const changeIdentity = useCallback(() => {
     try { localStorage.removeItem('anonchat_name'); } catch (_) {}
@@ -383,9 +485,7 @@ export default function App() {
     setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
   }, []);
 
-  const handleFilePick = useCallback(() => {
-    fileRef.current?.click();
-  }, []);
+  const handleFilePick = useCallback(() => fileRef.current?.click(), []);
 
   const handleFileChange = useCallback((e) => {
     const f = e.target.files[0];
@@ -399,8 +499,29 @@ export default function App() {
     e.target.value = '';
   }, []);
 
-  const cancelFilePreview = useCallback(() => {
-    setFilePreview(null);
+  const saveTopic = useCallback(() => {
+    const t = topicInput.trim();
+    socketRef.current?.emit('set-topic', t);
+    setRoomTopic(t || null);
+    setEditTopic(false);
+    setTopicInput('');
+  }, [topicInput]);
+
+  const handleGiphySearch = useCallback(async (q) => {
+    setGiphyQuery(q);
+    if (q.length < 2) { setGiphyResults([]); return; }
+    const results = await searchGiphy(q);
+    setGiphyResults(results);
+  }, []);
+
+  const sendGif = useCallback((url) => {
+    if (socketRef.current) {
+      socketRef.current.emit('chat-message', JSON.stringify({ type: 'image', url, name: 'GIF' }));
+      playSound('send');
+    }
+    setGiphyOpen(false);
+    setGiphyQuery('');
+    setGiphyResults([]);
   }, []);
 
   const insertEmoji = useCallback((emoji) => {
@@ -423,14 +544,20 @@ export default function App() {
     if (e.key === 'Enter') { e.preventDefault(); createRoom(); }
   };
 
-  const renderMessageText = useCallback((text) => {
+  const renderContent = useCallback((text) => {
     if (!text) return null;
-    const parts = parseMentions(text);
-    return parts.map((p, i) =>
-      p.type === 'mention'
-        ? <span key={i} className={`mention ${p.text === myName ? 'mention-me' : ''}`}>@{p.text}</span>
-        : <span key={i}>{p.text}</span>
-    );
+    const parts = parseMarkdown(text);
+    return parts.map((p, i) => {
+      if (p.type === 'bold') return <strong key={i}>{p.text}</strong>;
+      if (p.type === 'italic') return <em key={i}>{p.text}</em>;
+      if (p.type === 'code') return <code key={i} className="inline-code">{p.text}</code>;
+      if (p.type === 'link') return <a key={i} href={p.text} target="_blank" rel="noopener noreferrer" className="chat-link">{p.text}</a>;
+      if (p.type === 'mention') {
+        const name = p.text.slice(1);
+        return <span key={i} className={`mention ${name === myName ? 'mention-me' : ''}`}>@{name}</span>;
+      }
+      return <span key={i}>{p.text}</span>;
+    });
   }, [myName]);
 
   if (!ready) {
@@ -450,11 +577,8 @@ export default function App() {
     ? `${typingUsers.length} people typing...`
     : null;
 
-  const firstTypingUser = typingUsers[0];
-  const typingInitials = firstTypingUser ? getInitials(firstTypingUser) : '';
-
   return (
-    <div className={`chat-layout ${sidebarOpen ? 'sidebar-open' : ''}`}>
+    <div className={`chat-layout ${sidebarOpen ? 'sidebar-open' : ''}`} onClick={closeContextMenu}>
       {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
       <aside className="sidebar">
         <div className="sidebar-head">
@@ -551,17 +675,41 @@ export default function App() {
           )}
         </div>
 
-        <div className="msg-area">
+        {roomTopic && (
+          <div className="topic-bar" onClick={() => { setEditTopic(true); setTopicInput(roomTopic); }}>
+            <span className="topic-text">{roomTopic}</span>
+            <span className="topic-edit-hint">click to edit</span>
+          </div>
+        )}
+        {editTopic && (
+          <div className="topic-edit-bar">
+            <input className="topic-input" placeholder="Set room topic..." value={topicInput}
+              onChange={(e) => setTopicInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveTopic(); if (e.key === 'Escape') setEditTopic(false); }}
+              autoFocus maxLength={100} />
+            <button className="btn-xs" onClick={saveTopic}>Save</button>
+            <button className="btn-xs cancel" onClick={() => setEditTopic(false)}>&times;</button>
+          </div>
+        )}
+        {!roomTopic && !editTopic && (
+          <div className="topic-bar empty" onClick={() => setEditTopic(true)}>
+            <span className="topic-text dim">Add a topic</span>
+          </div>
+        )}
+
+        <div className="msg-area" ref={msgAreaRef}>
           {messages.map((m, i) => {
             if (m.type === 'system') {
-              return <div key={i} className="msg-system">{m.text}</div>;
+              return <div key={i} className="msg-system" ref={i === 0 ? firstMsgRef : null}>{m.text}</div>;
             }
             const isMine = m.senderId === myId;
             const showAvatar = i === 0 || messages[i - 1]?.senderId !== m.senderId || messages[i - 1]?.type === 'system';
             const hasReactions = m.reactions && Object.keys(m.reactions).length > 0;
 
             return (
-              <div key={m.id || i} className={`msg-row ${isMine ? 'mine' : 'theirs'}`}>
+              <div key={m.id || i} className={`msg-row ${isMine ? 'mine' : 'theirs'}`}
+                onContextMenu={(e) => handleContextMenu(e, m)}
+                ref={i === 0 ? firstMsgRef : null}>
                 {!isMine && showAvatar && (
                   <div className="avatar" style={{ background: m.color }}>{getInitials(m.username)}</div>
                 )}
@@ -579,7 +727,10 @@ export default function App() {
                     {m.file && m.file.type === 'file' && (
                       <a href={m.file.url} target="_blank" rel="noopener noreferrer" className="msg-file">📎 {m.file.name}</a>
                     )}
-                    {renderMessageText(m.text)}
+                    {m.file && m.file.type === 'voice' && (
+                      <audio controls src={m.file.url} className="msg-audio" preload="metadata" />
+                    )}
+                    {renderContent(m.text)}
                     {reactionPicker === m.id && (
                       <div className="reaction-bar" onClick={(e) => e.stopPropagation()}>
                         {REACT_EMOJIS.map((e) => (
@@ -606,11 +757,9 @@ export default function App() {
           })}
           {typingUsers.length > 0 && (
             <div className="typing-bubble-row">
-              <div className="avatar-sm typing-avatar">{typingInitials}</div>
+              <div className="avatar-sm typing-avatar">{getInitials(typingUsers[0])}</div>
               <div className="typing-bubble">
-                <span className="typing-dot" />
-                <span className="typing-dot" />
-                <span className="typing-dot" />
+                <span className="typing-dot" /><span className="typing-dot" /><span className="typing-dot" />
               </div>
               <span className="typing-label">{typingText}</span>
             </div>
@@ -625,22 +774,44 @@ export default function App() {
             ) : (
               <span className="file-preview-name">📎 {filePreview.name}</span>
             )}
-            <button className="file-preview-cancel" onClick={cancelFilePreview}>&times;</button>
+            <button className="file-preview-cancel" onClick={() => setFilePreview(null)}>&times;</button>
           </div>
         )}
+
+        {replyTo && (
+          <div className="reply-bar">
+            <span className="reply-label">Replying to <strong>{replyTo.username}</strong></span>
+            <span className="reply-preview">{replyTo.text?.slice(0, 60) || (replyTo.file ? '[file]' : '')}</span>
+            <button className="reply-cancel" onClick={() => setReplyTo(null)}>&times;</button>
+          </div>
+        )}
+
         <div className="input-area" style={{ position: 'relative' }}>
           <div className="input-bar">
             <button className="emoji-toggle" onClick={() => setShowEmojiPicker((v) => !v)} title="Emoji">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10" />
                 <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-                <line x1="9" y1="9" x2="9.01" y2="9" />
-                <line x1="15" y1="9" x2="15.01" y2="9" />
+                <line x1="9" y1="9" x2="9.01" y2="9" /><line x1="15" y1="9" x2="15.01" y2="9" />
               </svg>
             </button>
             <button className="emoji-toggle" onClick={handleFilePick} title="Attach file">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+              </svg>
+            </button>
+            <button className={`emoji-toggle ${recording ? 'recording' : ''}`}
+              onMouseDown={startRecording} onMouseUp={stopRecording} onMouseLeave={stopRecording}
+              onTouchStart={startRecording} onTouchEnd={stopRecording}
+              title="Hold to record voice">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+              </svg>
+            </button>
+            <button className="emoji-toggle" onClick={() => setGiphyOpen((v) => !v)} title="GIF">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="2" width="20" height="20" rx="4"/><text x="12" y="16" textAnchor="middle" fontSize="10" fontWeight="bold" fill="currentColor">GIF</text>
               </svg>
             </button>
             <input ref={fileRef} type="file" className="file-input-hidden" onChange={handleFileChange} accept="image/*,.pdf,.doc,.docx,.txt,.zip" />
@@ -668,6 +839,20 @@ export default function App() {
               ))}
             </div>
           )}
+          {giphyOpen && (
+            <>
+              <div className="emoji-backdrop" onClick={() => { setGiphyOpen(false); setGiphyQuery(''); setGiphyResults([]); }} />
+              <div className="giphy-panel">
+                <input className="giphy-search" placeholder="Search GIFs..." value={giphyQuery}
+                  onChange={(e) => handleGiphySearch(e.target.value)} autoFocus />
+                <div className="giphy-grid">
+                  {giphyResults.map((url, i) => (
+                    <img key={i} src={url} alt="" className="giphy-item" onClick={() => sendGif(url)} loading="lazy" />
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
           {showEmojiPicker && (
             <>
               <div className="emoji-backdrop" onClick={() => setShowEmojiPicker(false)} />
@@ -680,6 +865,16 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {contextMenu && (
+        <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
+          <button className="context-item" onClick={() => copyMessage(contextMenu.message.file ? contextMenu.message.file.url : contextMenu.message.text)}>Copy</button>
+          {contextMenu.isMine && (
+            <button className="context-item danger" onClick={() => deleteMessage(contextMenu.message.id)}>Delete</button>
+          )}
+          <button className="context-item" onClick={() => replyToMessage(contextMenu.message)}>Reply</button>
+        </div>
+      )}
     </div>
   );
 }
