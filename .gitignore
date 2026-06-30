@@ -8,3 +8,8 @@ android/build/
 android/capacitor-cordova-android-plugins/build/
 android/local.properties
 *.apk
+ios/App/build/
+ios/DerivedData/
+ios/*.xcworkspace/xcuserdata/
+ios/*.xcodeproj/xcuserdata/
+ios/Pods/
