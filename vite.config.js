@@ -11,7 +11,9 @@ export default defineConfig(({ mode }) => ({
       '/socket.io': {
         target: 'http://localhost:3001',
         ws: true
-      }
+      },
+      '/upload': 'http://localhost:3001',
+      '/uploads': 'http://localhost:3001'
     }
   },
   build: {
